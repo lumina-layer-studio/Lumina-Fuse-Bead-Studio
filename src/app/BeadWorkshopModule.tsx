@@ -272,6 +272,11 @@ export function BeadWorkshopModule({
     );
   }, []);
 
+  const clearVisibleError = useCallback(() => {
+    setVisibleError(null);
+    ignoreFailure(client.status.error(null));
+  }, [client.status]);
+
   const reportProcessingError = useCallback(
     (code: string) => {
       const message = t("workshop.bead.processingError");
@@ -549,7 +554,7 @@ export function BeadWorkshopModule({
 
   const handlePickImage = async () => {
     setIsPicking(true);
-    setVisibleError(null);
+    clearVisibleError();
     setResumed(false);
     ignoreFailure(
       client.status.progress({
@@ -616,7 +621,7 @@ export function BeadWorkshopModule({
   const handleRecognize = async () => {
     if (!workingRaster || !calibrationDraft) return;
     setIsProcessing(true);
-    setVisibleError(null);
+    clearVisibleError();
     ignoreFailure(
       client.status.progress({
         phase: "recognize-pattern",
@@ -719,7 +724,7 @@ export function BeadWorkshopModule({
     }
 
     setHandoffBusy(true);
-    setVisibleError(null);
+    clearVisibleError();
     ignoreFailure(
       client.status.progress({
         phase: "render-handoff",
@@ -758,7 +763,7 @@ export function BeadWorkshopModule({
   const submitHandoff = async () => {
     if (!handoffSummary) return;
     setHandoffBusy(true);
-    setVisibleError(null);
+    clearVisibleError();
     ignoreFailure(
       client.status.progress({
         phase: "handoff-image",
@@ -785,7 +790,7 @@ export function BeadWorkshopModule({
   const confirmReplacement = async () => {
     if (!pendingReplacement) return;
     setHandoffBusy(true);
-    setVisibleError(null);
+    clearVisibleError();
     try {
       await sendHandoff(pendingReplacement);
       setPendingReplacement(null);
@@ -845,7 +850,7 @@ export function BeadWorkshopModule({
     setHandoffSummary(null);
     setPendingReplacement(null);
     setHandoffBusy(false);
-    setVisibleError(null);
+    clearVisibleError();
     setResumed(false);
     setPreviewColorMode("source");
     latestProjectRef.current = null;

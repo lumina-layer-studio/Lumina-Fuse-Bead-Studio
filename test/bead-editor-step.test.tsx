@@ -123,7 +123,7 @@ describe("BeadEditorStep", () => {
     );
     expect(dispatch).toHaveBeenCalledWith({
       type: "select-issue",
-      issueIndex: 0,
+      issueIndex: 1,
     });
 
     fireEvent.click(screen.getByRole("button", { name: "原图" }));

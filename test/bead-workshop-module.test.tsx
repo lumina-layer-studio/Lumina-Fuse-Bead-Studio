@@ -192,6 +192,53 @@ describe("BeadWorkshopModule", () => {
     harness.close();
   });
 
+  it("clears the host error when a failed image pick is retried successfully", async () => {
+    const raster = sourceRaster();
+    const harness = createSdkHarness();
+    const client = await harness.connect();
+    vi.spyOn(client.image, "pick")
+      .mockRejectedValueOnce(new Error("decode failed"))
+      .mockResolvedValueOnce({
+        name: "pattern.png",
+        mimeType: "image/png",
+        bytes: new Uint8Array([1, 2, 3]).buffer,
+        raster,
+      });
+    render(
+      <BeadWorkshopModule
+        client={client}
+        locale="zh-CN"
+        createEngine={() => new FakeEngine()}
+        imageCodec={codec}
+        autosaveDelayMs={0}
+      />,
+    );
+
+    const pickImage = await screen.findByRole("button", {
+      name: "选择拼豆图纸",
+    });
+    fireEvent.click(pickImage);
+    expect(
+      await screen.findByText(
+        "无法读取这张图。请确认文件格式后重试。",
+      ),
+    ).toBeInTheDocument();
+    expect(harness.payloads("status.error")).toContainEqual({
+      code: "image-pick-failed",
+      message: "无法读取这张图。请确认文件格式后重试。",
+      retryable: true,
+    });
+
+    fireEvent.click(pickImage);
+    expect(
+      await screen.findByRole("heading", { name: "校准图纸" }),
+    ).toBeInTheDocument();
+    expect(harness.payloads("status.error").at(-1)).toBeNull();
+
+    client.close();
+    harness.close();
+  });
+
   it("resumes a valid latest project and renders it before ready", async () => {
     const project = createBeadProject({
       projectId: "restored",

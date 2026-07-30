@@ -41,6 +41,29 @@ function makeProject(
 }
 
 describe("bead editor reducer", () => {
+  it("focuses the first unresolved confidence issue on entry", () => {
+    const current = makeProject();
+    current.confidenceIssues = [
+      {
+        cellIndex: 1,
+        confidence: 0.38,
+        reasons: ["overlay-obstruction"],
+        resolved: true,
+      },
+      {
+        cellIndex: 7,
+        confidence: 0.42,
+        reasons: ["jpeg-near-tie"],
+        resolved: false,
+      },
+    ];
+
+    const state = createBeadEditorState(current);
+
+    expect(state.selectedIssueIndex).toBe(1);
+    expect(state.selectedCellIndex).toBe(7);
+  });
+
   it("paints, erases, and places transparent support with reversible patches", () => {
     let state = createBeadEditorState(makeProject());
 

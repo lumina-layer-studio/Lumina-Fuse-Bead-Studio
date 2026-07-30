@@ -273,14 +273,21 @@ export function createBeadEditorState(
   project: BeadProject,
 ): BeadEditorState {
   const present = validateBeadProject(project);
+  const selectedIssueIndex = present.confidenceIssues.findIndex(
+    (issue) => !issue.resolved,
+  );
   return {
     present,
     past: [],
     future: [],
     activeTool: "paint",
     activePaletteIndex: 0,
-    selectedCellIndex: null,
-    selectedIssueIndex: null,
+    selectedCellIndex:
+      selectedIssueIndex >= 0
+        ? present.confidenceIssues[selectedIssueIndex].cellIndex
+        : null,
+    selectedIssueIndex:
+      selectedIssueIndex >= 0 ? selectedIssueIndex : null,
   };
 }
 
