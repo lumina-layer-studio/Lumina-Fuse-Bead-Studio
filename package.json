@@ -9,7 +9,7 @@
     "build": "tsc -b && vite build",
     "test": "vitest",
     "test:run": "vitest run",
-    "package": "pnpm run test:run && pnpm run build && node scripts/package.mjs"
+    "package": "pnpm run test:run && pnpm run build && node --test test/inline-worker-build.test.mjs && node scripts/package.mjs && node --test test/package-output.test.mjs"
   },
   "dependencies": {
     "@lumina/workshop-sdk": "file:vendor/lumina-workshop-sdk-1.0.0.tgz",
