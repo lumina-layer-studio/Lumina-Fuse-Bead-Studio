@@ -89,7 +89,7 @@ class FakeEngine implements BeadProcessingEngine {
 const codec: BeadImageCodec = {
   decode: vi.fn().mockResolvedValue(sourceRaster()),
   encodePng: vi.fn().mockResolvedValue(
-    new Uint8Array([137, 80, 78, 71]).buffer,
+    new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]).buffer,
   ),
 };
 
@@ -357,6 +357,19 @@ describe("BeadWorkshopModule", () => {
 
     fireEvent.click(
       screen.getByRole("button", { name: "交给 Lumina 转换" }),
+    );
+    expect(
+      await screen.findByRole("dialog", {
+        name: "确认交给 Lumina 转换？",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("2 × 2 格 · 5.2 × 5.2 mm · 压合 50%"),
+    ).toBeInTheDocument();
+    expect(harness.payloads("handoff.image")).toHaveLength(0);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "继续交给 Lumina" }),
     );
     expect(
       await screen.findByRole("dialog", {

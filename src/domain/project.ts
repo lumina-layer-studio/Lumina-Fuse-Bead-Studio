@@ -38,6 +38,7 @@ const CONFIDENCE_REASONS = new Set([
   "overlay-obstruction",
   "jpeg-near-tie",
 ]);
+const MAX_RECIPE_PAYLOAD_BYTES = 1024 * 1024;
 
 export class BeadProjectValidationError extends Error {
   readonly code: string;
@@ -51,6 +52,28 @@ export class BeadProjectValidationError extends Error {
 
 function fail(code: string, message: string): never {
   throw new BeadProjectValidationError(code, message);
+}
+
+function assertRecipePayloadBound(payload: unknown): void {
+  try {
+    const serialized = JSON.stringify(payload);
+    if (
+      serialized === undefined ||
+      new TextEncoder().encode(serialized).byteLength >
+        MAX_RECIPE_PAYLOAD_BYTES
+    ) {
+      fail(
+        "recipe-payload-too-large",
+        "Bead recipe payload exceeds 1 MiB.",
+      );
+    }
+  } catch (error) {
+    if (error instanceof BeadProjectValidationError) throw error;
+    fail(
+      "invalid-recipe-source",
+      "Bead recipe payload is not serializable.",
+    );
+  }
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -611,6 +634,7 @@ export function createBeadRecipeSource(
     beadPitchMm: project.beadPitchMm,
     compression: project.compression,
   };
+  assertRecipePayloadBound(payload);
   return {
     manifestSchemaVersion: WORKSHOP_MANIFEST_SCHEMA_VERSION,
     moduleId: project.moduleId,
@@ -646,6 +670,7 @@ export function restoreBeadProjectFromRecipeSource(
   }
 
   const payload = source.payload;
+  assertRecipePayloadBound(payload);
   if (payload.payloadVersion !== BEAD_RECIPE_PAYLOAD_VERSION) {
     return fail("invalid-recipe-source", "Bead recipe payload version is unsupported.");
   }

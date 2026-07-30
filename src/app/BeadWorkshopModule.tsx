@@ -1,7 +1,6 @@
 import type {
   WorkshopClient,
   WorkshopColorLibrary,
-  WorkshopImageHandoff,
 } from "@lumina/workshop-sdk";
 import {
   useCallback,
@@ -18,9 +17,7 @@ import {
   type BeadEditorState,
 } from "../domain/editorReducer";
 import {
-  calculatePhysicalSize,
   createBeadProject,
-  createBeadRecipeSource,
 } from "../domain/project";
 import { cropRaster, suggestGrid } from "../domain/recognition";
 import type { BeadRenderResult } from "../domain/renderer";
@@ -48,6 +45,11 @@ import {
   browserBeadImageCodec,
   type BeadImageCodec,
 } from "../host/imageCodec";
+import {
+  prepareBeadHandoff,
+  toWorkshopImageHandoff,
+  type PreparedBeadHandoff,
+} from "../host/handoff";
 import { translate, type Locale } from "../i18n/translations";
 import Button from "../ui/Button";
 import CropModal from "../ui/CropModal";
@@ -67,6 +69,7 @@ import {
 } from "./BeadCalibrationStep";
 import { BeadEditorStep } from "./BeadEditorStep";
 import { BeadHandoffConfirmDialog } from "./BeadHandoffConfirmDialog";
+import { BeadHandoffSummaryDialog } from "./BeadHandoffSummaryDialog";
 
 export type { BeadImageCodec } from "../host/imageCodec";
 
@@ -99,9 +102,10 @@ interface BeadWorkshopModuleProps {
   autosaveDelayMs?: number;
 }
 
-interface PendingHandoff {
-  base: Omit<WorkshopImageHandoff, "pngBytes">;
-  pngBytes: ArrayBuffer;
+interface HandoffSummaryState {
+  handoff: PreparedBeadHandoff;
+  compression: number;
+  libraryLabel: string | null;
 }
 
 function defaultEngine(): BeadProcessingEngine {
@@ -172,15 +176,6 @@ function ignoreFailure(promise: Promise<unknown>): void {
   void promise.catch(() => undefined);
 }
 
-function payloadForHandoff(
-  pending: PendingHandoff,
-): WorkshopImageHandoff {
-  return {
-    ...pending.base,
-    pngBytes: pending.pngBytes.slice(0),
-  };
-}
-
 export function BeadWorkshopModule({
   client,
   locale,
@@ -218,8 +213,10 @@ export function BeadWorkshopModule({
     useState<BeadRenderResult | null>(null);
   const [renderBusy, setRenderBusy] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
-  const [pendingHandoff, setPendingHandoff] =
-    useState<PendingHandoff | null>(null);
+  const [handoffSummary, setHandoffSummary] =
+    useState<HandoffSummaryState | null>(null);
+  const [pendingReplacement, setPendingReplacement] =
+    useState<PreparedBeadHandoff | null>(null);
   const [resumed, setResumed] = useState(false);
   const [colorLibrary, setColorLibrary] =
     useState<WorkshopColorLibrary | null>(null);
@@ -644,20 +641,30 @@ export function BeadWorkshopModule({
     }
   };
 
-  const reportHandoffError = () => {
+  const reportHandoffError = (error?: unknown) => {
     const message = t("workshop.bead.handoffError");
     setVisibleError(message);
+    const hostCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string"
+        ? error.code
+        : "";
+    const code = /size|quota|payload|too.large/i.test(hostCode)
+      ? "bead-handoff-size-or-quota-rejected"
+      : "bead-handoff-failed";
     ignoreFailure(
       client.status.error({
-        code: "bead-handoff-failed",
+        code,
         message,
         retryable: true,
       }),
     );
   };
 
-  const sendHandoff = async (handoff: PendingHandoff) =>
-    client.handoff.image(payloadForHandoff(handoff));
+  const sendHandoff = async (handoff: PreparedBeadHandoff) =>
+    client.handoff.image(toWorkshopImageHandoff(handoff));
 
   const handleHandoff = async () => {
     const project = editorState?.present;
@@ -683,57 +690,65 @@ export function BeadWorkshopModule({
       const task = engine.render(project, project.compression, 32);
       engine.cancelBefore(task.id);
       const raster = await task.promise;
-      const pngBytes = await imageCodec.encodePng(raster);
-      const size = calculatePhysicalSize(
+      const handoff = await prepareBeadHandoff(
         project,
-        project.beadPitchMm,
+        raster,
+        imageCodec,
+        hasCurrentPrintMapping
+          ? project.printMapping?.libraryId ?? null
+          : null,
       );
-      const handoff: PendingHandoff = {
-        base: {
-          moduleId: project.moduleId,
-          moduleVersion: project.moduleVersion,
-          projectId: project.projectId,
-          pixelWidth: raster.width,
-          pixelHeight: raster.height,
-          recommendedWidthMm: size.widthMm,
-          recommendedHeightMm: size.heightMm,
-          preserveCanvasBounds: true,
-          layout: {
-            kind: "square-grid",
-            rows: project.rows,
-            columns: project.columns,
-            pitchMm: project.beadPitchMm,
-          },
-          colorLibraryId: hasCurrentPrintMapping
-            ? project.printMapping?.libraryId ?? null
-            : null,
-          recipeSource: structuredClone(
-            createBeadRecipeSource(project),
-          ),
-        },
-        pngBytes: pngBytes.slice(0),
-      };
-      const result = await sendHandoff(handoff);
-      setPendingHandoff(
-        result.status === "needs-confirmation" ? handoff : null,
-      );
+      setHandoffSummary({
+        handoff,
+        compression: project.compression,
+        libraryLabel: hasCurrentPrintMapping
+          ? project.printMapping?.libraryLabel ?? null
+          : null,
+      });
     } catch (error) {
-      if (!isCancellation(error)) reportHandoffError();
+      if (!isCancellation(error)) reportHandoffError(error);
     } finally {
       setHandoffBusy(false);
       ignoreFailure(client.status.progress(null));
     }
   };
 
-  const confirmHandoff = async () => {
-    if (!pendingHandoff) return;
+  const submitHandoff = async () => {
+    if (!handoffSummary) return;
+    setHandoffBusy(true);
+    setVisibleError(null);
+    ignoreFailure(
+      client.status.progress({
+        phase: "handoff-image",
+        completed: 0,
+        total: 1,
+      }),
+    );
+    try {
+      const result = await sendHandoff(handoffSummary.handoff);
+      setPendingReplacement(
+        result.status === "needs-confirmation"
+          ? handoffSummary.handoff
+          : null,
+      );
+      setHandoffSummary(null);
+    } catch (error) {
+      reportHandoffError(error);
+    } finally {
+      setHandoffBusy(false);
+      ignoreFailure(client.status.progress(null));
+    }
+  };
+
+  const confirmReplacement = async () => {
+    if (!pendingReplacement) return;
     setHandoffBusy(true);
     setVisibleError(null);
     try {
-      await sendHandoff(pendingHandoff);
-      setPendingHandoff(null);
-    } catch {
-      reportHandoffError();
+      await sendHandoff(pendingReplacement);
+      setPendingReplacement(null);
+    } catch (error) {
+      reportHandoffError(error);
     } finally {
       setHandoffBusy(false);
     }
@@ -785,7 +800,8 @@ export function BeadWorkshopModule({
     setProjectSource(null);
     setCrop(null);
     setRenderResult(null);
-    setPendingHandoff(null);
+    setHandoffSummary(null);
+    setPendingReplacement(null);
     setHandoffBusy(false);
     setVisibleError(null);
     setResumed(false);
@@ -884,12 +900,32 @@ export function BeadWorkshopModule({
           />
         ) : null}
 
+        <BeadHandoffSummaryDialog
+          open={handoffSummary !== null}
+          busy={handoffBusy}
+          rows={handoffSummary?.handoff.base.layout?.rows ?? 0}
+          columns={
+            handoffSummary?.handoff.base.layout?.columns ?? 0
+          }
+          compression={handoffSummary?.compression ?? 0}
+          widthMm={
+            handoffSummary?.handoff.base.recommendedWidthMm ?? 0
+          }
+          heightMm={
+            handoffSummary?.handoff.base.recommendedHeightMm ?? 0
+          }
+          libraryLabel={handoffSummary?.libraryLabel ?? null}
+          translate={t}
+          onCancel={() => setHandoffSummary(null)}
+          onConfirm={submitHandoff}
+        />
+
         <BeadHandoffConfirmDialog
-          open={pendingHandoff !== null}
+          open={pendingReplacement !== null}
           busy={handoffBusy}
           translate={t}
-          onCancel={() => setPendingHandoff(null)}
-          onConfirm={confirmHandoff}
+          onCancel={() => setPendingReplacement(null)}
+          onConfirm={confirmReplacement}
         />
 
         {sourceUrl && originalRaster ? (

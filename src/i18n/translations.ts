@@ -98,6 +98,15 @@ const zhCN = {
   "workshop.bead.newProject": "新建图纸",
   "workshop.bead.handoff": "交给 Lumina 转换",
   "workshop.bead.handoffEmpty": "至少保留一颗有颜色的拼豆后才能转换",
+  "workshop.bead.handoffSummaryTitle": "确认交给 Lumina 转换？",
+  "workshop.bead.handoffSummaryDescription":
+    "将发送作品原色 PNG；当前打印色库只作为映射来源记录，不会替换图纸颜色。",
+  "workshop.bead.handoffSummary":
+    "{columns} × {rows} 格 · {width} × {height} mm · 压合 {compression}%",
+  "workshop.bead.handoffLibrary": "映射来源：{label}",
+  "workshop.bead.handoffNoLibrary": "未绑定打印色库",
+  "workshop.bead.handoffSummaryCancel": "返回编辑",
+  "workshop.bead.handoffSummaryConfirm": "继续交给 Lumina",
   "workshop.bead.replaceTitle": "替换当前转换内容？",
   "workshop.bead.replaceDescription":
     "转换器里已有图片或批量任务。继续会用当前拼豆画布替换它，但不会删除已自动保存的拼豆项目。",
@@ -226,6 +235,15 @@ const enUS = {
   "workshop.bead.handoff": "Send to Lumina Converter",
   "workshop.bead.handoffEmpty":
     "Keep at least one colored bead before converting",
+  "workshop.bead.handoffSummaryTitle": "Send to Lumina Converter?",
+  "workshop.bead.handoffSummaryDescription":
+    "The source-color PNG will be sent. The current print library is recorded only as mapping provenance and never replaces artwork colors.",
+  "workshop.bead.handoffSummary":
+    "{columns} × {rows} cells · {width} × {height} mm · {compression}% pressure",
+  "workshop.bead.handoffLibrary": "Mapping source: {label}",
+  "workshop.bead.handoffNoLibrary": "No print library attached",
+  "workshop.bead.handoffSummaryCancel": "Back to editing",
+  "workshop.bead.handoffSummaryConfirm": "Continue to Lumina",
   "workshop.bead.replaceTitle": "Replace the current converter content?",
   "workshop.bead.replaceDescription":
     "The converter already contains an image or batch. Continuing replaces it with this bead canvas without deleting the autosaved bead project.",
