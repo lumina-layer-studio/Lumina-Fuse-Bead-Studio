@@ -24,8 +24,8 @@ The benchmark must stay within `benchmarks/ci-budget.json`. It verifies 52×52 p
 `pnpm package` produces:
 
 ```text
-artifacts/lumina.bead-pattern-1.0.0.lumina-workshop
-artifacts/lumina.bead-pattern-1.0.0.lumina-workshop.sha256
+artifacts/lumina.bead-pattern-1.0.1.lumina-workshop
+artifacts/lumina.bead-pattern-1.0.1.lumina-workshop.sha256
 ```
 
 The archive is reproducible byte for byte and contains only:
@@ -42,7 +42,7 @@ Validate it against the Lumina repository without executing module code:
 
 ```bash
 python -m core.workshop.package_validator \
-  /absolute/path/to/artifacts/lumina.bead-pattern-1.0.0.lumina-workshop
+  /absolute/path/to/artifacts/lumina.bead-pattern-1.0.1.lumina-workshop
 ```
 
 ## Real host acceptance
@@ -66,4 +66,3 @@ Capture 0/50/100 pressure states and the converter handoff for release evidence.
 ## Release gate
 
 Only an exact `v<semver>` tag may publish. The tag, `package.json`, and `manifest.json` versions must match. The Release contains exactly one versioned `.lumina-workshop` package and its `.sha256` companion—never a mutable `latest` asset.
-

@@ -7,6 +7,10 @@ import { useEffect, useState } from "react";
 
 import type { BeadImageCodec } from "../host/imageCodec";
 import { normalizeLocale } from "../i18n/translations";
+import {
+  BEAD_MODULE_ID,
+  BEAD_MODULE_VERSION,
+} from "../domain/types";
 import { StatusBanner } from "../ui/panelPrimitives";
 import {
   BeadWorkshopModule,
@@ -24,8 +28,8 @@ interface ModuleEntryProps {
 
 const connectToLumina: ConnectFunction = () =>
   connectWorkshop({
-    moduleId: "lumina.bead-pattern",
-    moduleVersion: "1.0.0",
+    moduleId: BEAD_MODULE_ID,
+    moduleVersion: BEAD_MODULE_VERSION,
   });
 
 export function ModuleEntry({

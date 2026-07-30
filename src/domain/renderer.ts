@@ -8,6 +8,19 @@ import type {
 
 const MAX_PIXELS_PER_CELL = 64;
 const SCORE_EPSILON = 1e-12;
+const OCCUPANCY_CACHE_RADIUS = 2;
+const OWNER_TILE_SIZE = 3;
+const OWNER_NONE = -1;
+const OWNER_ROW_OFFSETS = Int8Array.from([
+  -1, -1, -1,
+  0, 0, 0,
+  1, 1, 1,
+]);
+const OWNER_COLUMN_OFFSETS = Int8Array.from([
+  -1, 0, 1,
+  -1, 0, 1,
+  -1, 0, 1,
+]);
 
 export interface BeadRenderOptions {
   compression: number;
@@ -319,40 +332,71 @@ function candidateScore(
   return score <= geometry.outerRadius ? score : null;
 }
 
-function renderPressureField(
+function occupancyNeighborhoodKey(
+  occupancy: Uint8Array,
   project: BeadProject,
+  logicalRow: number,
+  logicalColumn: number,
+): number {
+  let key = 0;
+  let bit = 0;
+  for (
+    let rowOffset = -OCCUPANCY_CACHE_RADIUS;
+    rowOffset <= OCCUPANCY_CACHE_RADIUS;
+    rowOffset += 1
+  ) {
+    for (
+      let columnOffset = -OCCUPANCY_CACHE_RADIUS;
+      columnOffset <= OCCUPANCY_CACHE_RADIUS;
+      columnOffset += 1
+    ) {
+      if (
+        occupiedAt(
+          occupancy,
+          project.rows,
+          project.columns,
+          logicalRow + rowOffset,
+          logicalColumn + columnOffset,
+        )
+      ) {
+        key |= 1 << bit;
+      }
+      bit += 1;
+    }
+  }
+  return key;
+}
+
+function buildOwnerTile(
+  occupancy: Uint8Array,
+  project: BeadProject,
+  logicalRow: number,
+  logicalColumn: number,
   pixelsPerCell: number,
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
   geometry: RenderGeometry,
-): void {
-  const occupancy = Uint8Array.from(
-    project.cells,
-    (cell) => (isOccupied(cell) ? 1 : 0),
+): Int8Array {
+  const owners = new Int8Array(
+    pixelsPerCell * pixelsPerCell,
+  );
+  owners.fill(OWNER_NONE);
+  const minimumRow = Math.max(0, logicalRow - 1);
+  const maximumRow = Math.min(
+    project.rows - 1,
+    logicalRow + 1,
+  );
+  const minimumColumn = Math.max(0, logicalColumn - 1);
+  const maximumColumn = Math.min(
+    project.columns - 1,
+    logicalColumn + 1,
   );
 
-  for (let y = 0; y < height; y += 1) {
+  for (let localY = 0; localY < pixelsPerCell; localY += 1) {
+    const y = logicalRow * pixelsPerCell + localY;
     const gridY = (y + 0.5) / pixelsPerCell;
-    const logicalRow = Math.min(
-      project.rows - 1,
-      Math.floor(gridY),
-    );
-    const minimumRow = Math.max(0, logicalRow - 1);
-    const maximumRow = Math.min(project.rows - 1, logicalRow + 1);
-
-    for (let x = 0; x < width; x += 1) {
+    for (let localX = 0; localX < pixelsPerCell; localX += 1) {
+      const x = logicalColumn * pixelsPerCell + localX;
       const gridX = (x + 0.5) / pixelsPerCell;
-      const logicalColumn = Math.min(
-        project.columns - 1,
-        Math.floor(gridX),
-      );
-      const logicalCell =
-        project.cells[
-          logicalRow * project.columns + logicalColumn
-        ];
       if (
-        logicalCell.kind === "transparent-support" ||
         isJunctionRelief(
           occupancy,
           project,
@@ -364,13 +408,10 @@ function renderPressureField(
         continue;
       }
 
-      const minimumColumn = Math.max(0, logicalColumn - 1);
-      const maximumColumn = Math.min(
-        project.columns - 1,
-        logicalColumn + 1,
-      );
       let ownerIndex = -1;
       let ownerScore = Number.POSITIVE_INFINITY;
+      let ownerRow = -1;
+      let ownerColumn = -1;
 
       for (let row = minimumRow; row <= maximumRow; row += 1) {
         const deltaY = gridY - (row + 0.5);
@@ -407,20 +448,96 @@ function renderPressureField(
           ) {
             ownerIndex = index;
             ownerScore = score;
+            ownerRow = row;
+            ownerColumn = column;
           }
         }
       }
 
-      if (ownerIndex < 0) {
+      if (ownerIndex >= 0) {
+        owners[localY * pixelsPerCell + localX] =
+          (ownerRow - logicalRow + 1) * OWNER_TILE_SIZE +
+          (ownerColumn - logicalColumn + 1);
+      }
+    }
+  }
+  return owners;
+}
+
+function renderPressureField(
+  project: BeadProject,
+  pixelsPerCell: number,
+  data: Uint8ClampedArray,
+  width: number,
+  geometry: RenderGeometry,
+): void {
+  const occupancy = Uint8Array.from(
+    project.cells,
+    (cell) => (isOccupied(cell) ? 1 : 0),
+  );
+  const ownerTileCache = new Map<number, Int8Array>();
+
+  for (let logicalRow = 0; logicalRow < project.rows; logicalRow += 1) {
+    for (
+      let logicalColumn = 0;
+      logicalColumn < project.columns;
+      logicalColumn += 1
+    ) {
+      const logicalCell =
+        project.cells[
+          logicalRow * project.columns + logicalColumn
+        ];
+      if (logicalCell.kind === "transparent-support") {
         continue;
       }
-      const owner = project.cells[ownerIndex];
-      if (owner.kind === "color") {
-        writeColor(
-          data,
-          (y * width + x) * 4,
-          project.palette[owner.paletteIndex],
+      const cacheKey = occupancyNeighborhoodKey(
+        occupancy,
+        project,
+        logicalRow,
+        logicalColumn,
+      );
+      let ownerTile = ownerTileCache.get(cacheKey);
+      if (ownerTile === undefined) {
+        ownerTile = buildOwnerTile(
+          occupancy,
+          project,
+          logicalRow,
+          logicalColumn,
+          pixelsPerCell,
+          geometry,
         );
+        ownerTileCache.set(cacheKey, ownerTile);
+      }
+
+      const startX = logicalColumn * pixelsPerCell;
+      const startY = logicalRow * pixelsPerCell;
+      for (let localY = 0; localY < pixelsPerCell; localY += 1) {
+        for (let localX = 0; localX < pixelsPerCell; localX += 1) {
+          const ownerCode =
+            ownerTile[localY * pixelsPerCell + localX];
+          if (ownerCode === OWNER_NONE) {
+            continue;
+          }
+          const ownerRow =
+            logicalRow + OWNER_ROW_OFFSETS[ownerCode];
+          const ownerColumn =
+            logicalColumn + OWNER_COLUMN_OFFSETS[ownerCode];
+          const owner =
+            project.cells[
+              ownerRow * project.columns + ownerColumn
+            ];
+          if (owner.kind === "color") {
+            writeColor(
+              data,
+              (
+                (startY + localY) * width +
+                startX +
+                localX
+              ) * 4,
+              project.palette[owner.paletteIndex],
+            );
+          }
+        }
       }
     }
   }
@@ -449,7 +566,6 @@ export function renderBeadProject(
       options.pixelsPerCell,
       data,
       width,
-      height,
       buildGeometry(
         options.compression,
         options.pixelsPerCell,

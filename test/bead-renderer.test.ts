@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { createBeadProject } from "../src/domain/project";
@@ -209,5 +210,45 @@ describe("bead pressure renderer", () => {
         ).toBe(true);
       }
     }
+  });
+
+  it("keeps the established pressure-field pixels for mixed neighborhoods", () => {
+    const cells: BeadCell[] = Array.from(
+      { length: 30 },
+      (_, index) => {
+        if (index % 7 === 0) {
+          return { kind: "empty" };
+        }
+        if (index % 11 === 0) {
+          return { kind: "transparent-support" };
+        }
+        return { kind: "color", paletteIndex: index % 2 };
+      },
+    );
+    const project = makeProject(5, 6, cells);
+    const hash = createHash("sha256");
+    const previewHash = createHash("sha256");
+
+    for (const compression of [0, 35, 80, 99]) {
+      hash.update(
+        renderBeadProject(project, {
+          compression,
+          pixelsPerCell: 16,
+        }).data,
+      );
+      previewHash.update(
+        renderBeadProject(project, {
+          compression,
+          pixelsPerCell: 12,
+        }).data,
+      );
+    }
+
+    expect(hash.digest("hex")).toBe(
+      "36d2bb7aacad5ef3e27e2b82a76c9dd6bf8d51ce981d568bce5477f6d972755c",
+    );
+    expect(previewHash.digest("hex")).toBe(
+      "74e6c31618e0d71e290b5f7f5b0fd02e60c78cde94876cbd7612c1fc3756b4ee",
+    );
   });
 });
