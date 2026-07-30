@@ -19,7 +19,16 @@ import type {
   Raster,
   RecognitionResult,
 } from "../src/domain/types";
+import type { WorkshopColorLibrary } from "@lumina/workshop-sdk";
 import { createSdkHarness } from "./helpers/sdkHarness";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 function sourceRaster(): Raster {
   const data = new Uint8ClampedArray(4 * 4 * 4);
@@ -91,6 +100,20 @@ const codec: BeadImageCodec = {
   encodePng: vi.fn().mockResolvedValue(
     new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]).buffer,
   ),
+};
+
+const RETRIED_LIBRARY: WorkshopColorLibrary = {
+  id: "lut:aliz-ready",
+  label: "Aliz RYBW",
+  sourceKind: "lut",
+  colors: [
+    {
+      id: "slot:red",
+      label: "Red",
+      hex: "#E3212A",
+      materialId: null,
+    },
+  ],
 };
 
 describe("BeadWorkshopModule", () => {
@@ -218,6 +241,112 @@ describe("BeadWorkshopModule", () => {
 
     view.unmount();
     expect(engine.dispose).toHaveBeenCalledTimes(1);
+    harness.close();
+  });
+
+  it("lets the user reload the print library after a persistent miss", async () => {
+    const project = createBeadProject({
+      projectId: "library-manual-reload",
+      moduleVersion: "1.0.0",
+      now: "2026-07-30T00:00:00.000Z",
+      rows: 1,
+      columns: 1,
+      palette: [[230, 40, 50]],
+      cells: [{ kind: "color", paletteIndex: 0 }],
+    });
+    const harness = createSdkHarness({
+      latestProject: {
+        projectId: project.projectId,
+        schemaVersion: project.schemaVersion,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+        project,
+      },
+      colorLibraries: [null, RETRIED_LIBRARY],
+    });
+    const client = await harness.connect();
+    render(
+      <BeadWorkshopModule
+        client={client}
+        locale="zh-CN"
+        createEngine={() => new FakeEngine()}
+        imageCodec={codec}
+        autosaveDelayMs={0}
+      />,
+    );
+
+    await screen.findByText(
+      "Lumina 当前没有可用的 LUT 或耗材档案，仍可使用图纸原色编辑。",
+    );
+    expect(
+      harness.methods().filter(
+        (method) => method === "colorLibrary.read",
+      ),
+    ).toHaveLength(1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "重新读取打印色库" }),
+    );
+    expect(
+      await screen.findByText("当前色库：Aliz RYBW"),
+    ).toBeInTheDocument();
+    expect(
+      harness.methods().filter(
+        (method) => method === "colorLibrary.read",
+      ),
+    ).toHaveLength(2);
+
+    client.close();
+    harness.close();
+  });
+
+  it("keeps repeated manual reload clicks in one RPC flight", async () => {
+    const project = createBeadProject({
+      projectId: "library-single-flight",
+      moduleVersion: "1.0.0",
+      now: "2026-07-30T00:00:00.000Z",
+      rows: 1,
+      columns: 1,
+      palette: [[230, 40, 50]],
+      cells: [{ kind: "color", paletteIndex: 0 }],
+    });
+    const harness = createSdkHarness({
+      latestProject: {
+        projectId: project.projectId,
+        schemaVersion: project.schemaVersion,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+        project,
+      },
+    });
+    const client = await harness.connect();
+    const manualRead = deferred<WorkshopColorLibrary | null>();
+    const read = vi
+      .spyOn(client.colorLibrary, "read")
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(() => manualRead.promise);
+    render(
+      <BeadWorkshopModule
+        client={client}
+        locale="zh-CN"
+        createEngine={() => new FakeEngine()}
+        imageCodec={codec}
+        autosaveDelayMs={0}
+      />,
+    );
+
+    const reload = await screen.findByRole("button", {
+      name: "重新读取打印色库",
+    });
+    await waitFor(() => expect(reload).toBeEnabled());
+    fireEvent.click(reload);
+    fireEvent.click(reload);
+    expect(read).toHaveBeenCalledTimes(2);
+    manualRead.resolve(RETRIED_LIBRARY);
+    expect(
+      await screen.findByText("当前色库：Aliz RYBW"),
+    ).toBeInTheDocument();
+
+    client.close();
     harness.close();
   });
 

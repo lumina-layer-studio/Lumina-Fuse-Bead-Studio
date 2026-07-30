@@ -23,7 +23,17 @@ import {
   type RgbColor,
 } from "./types";
 
-const SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;
+const SEMVER_NUMBER = "(?:0|[1-9]\\d*)";
+const SEMVER_NAMED_IDENTIFIER =
+  "(?:\\d*[A-Za-z-][0-9A-Za-z-]*)";
+const SEMVER_PRERELEASE_IDENTIFIER =
+  `(?:${SEMVER_NUMBER}|${SEMVER_NAMED_IDENTIFIER})`;
+const SEMVER_PATTERN = new RegExp(
+  `^${SEMVER_NUMBER}\\.${SEMVER_NUMBER}\\.${SEMVER_NUMBER}` +
+    `(?:-${SEMVER_PRERELEASE_IDENTIFIER}` +
+    `(?:\\.${SEMVER_PRERELEASE_IDENTIFIER})*)?` +
+    "(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+);
 const WORKSHOP_MANIFEST_SCHEMA_VERSION = WORKSHOP_MANIFEST_VERSION;
 const INPUT_MODES = new Set<BeadInputMode>([
   "numbered-grid",

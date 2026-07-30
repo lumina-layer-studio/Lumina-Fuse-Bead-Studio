@@ -68,6 +68,7 @@ const zhCN = {
   "workshop.bead.preview.print": "当前打印色库",
   "workshop.bead.printLibraryUnavailable":
     "Lumina 当前没有可用的 LUT 或耗材档案，仍可使用图纸原色编辑。",
+  "workshop.bead.reloadPrintLibrary": "重新读取打印色库",
   "workshop.bead.printMappingRequired":
     "先生成一次打印色映射，再预览当前色库。",
   "workshop.bead.printMappingStale":
@@ -205,6 +206,7 @@ const enUS = {
   "workshop.bead.preview.print": "Current print library",
   "workshop.bead.printLibraryUnavailable":
     "Lumina has no current LUT or material archive. You can keep editing with source colors.",
+  "workshop.bead.reloadPrintLibrary": "Reload print library",
   "workshop.bead.printMappingRequired":
     "Create a print-color mapping before previewing the current library.",
   "workshop.bead.printMappingStale":

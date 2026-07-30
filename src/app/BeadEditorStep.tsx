@@ -39,11 +39,13 @@ interface BeadEditorStepProps {
   onHandoff?(): void;
   handoffBusy?: boolean;
   colorLibrary?: WorkshopColorLibrary | null;
+  colorLibraryRefreshing?: boolean;
   printMapping?: BeadPrintMapping | null;
   printMappingStale?: boolean;
   previewColorMode?: "source" | "print";
   displayPalette?: RgbColor[] | null;
   onPreviewColorModeChange?(mode: "source" | "print"): void;
+  onReloadColorLibrary?(): void;
   onRefreshPrintMapping?(): void;
   onSetPrintMappingEntry?(
     sourcePaletteIndex: number,
@@ -83,11 +85,13 @@ export function BeadEditorStep({
   onHandoff,
   handoffBusy = false,
   colorLibrary = null,
+  colorLibraryRefreshing = false,
   printMapping = null,
   printMappingStale = false,
   previewColorMode = "source",
   displayPalette = null,
   onPreviewColorModeChange,
+  onReloadColorLibrary,
   onRefreshPrintMapping,
   onSetPrintMappingEntry,
 }: BeadEditorStepProps) {
@@ -233,9 +237,18 @@ export function BeadEditorStep({
                 )}
               </p>
             ) : (
-              <StatusBanner>
-                {t("workshop.bead.printLibraryUnavailable")}
-              </StatusBanner>
+              <div className="mapping-action">
+                <StatusBanner>
+                  {t("workshop.bead.printLibraryUnavailable")}
+                </StatusBanner>
+                <Button
+                  label={t("workshop.bead.reloadPrintLibrary")}
+                  variant="secondary"
+                  size="small"
+                  loading={colorLibraryRefreshing}
+                  onClick={onReloadColorLibrary}
+                />
+              </div>
             )}
             {colorLibrary && !printMapping ? (
               <div className="mapping-action">

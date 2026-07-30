@@ -77,6 +77,31 @@ describe("bead project model", () => {
     expect("printMapping" in project).toBe(false);
   });
 
+  it("accepts prerelease and build metadata used by Workshop packages", () => {
+    const project = makeProject({
+      moduleVersion: "1.0.2-dev.4+desktop.qa",
+    });
+    const recipe = createBeadRecipeSource(project);
+    const restored = restoreBeadProjectFromRecipeSource(recipe, {
+      now: NOW,
+      projectId: "restored-prerelease",
+    });
+
+    expect(validateBeadProject(project)).toBe(project);
+    expect(recipe.moduleVersion).toBe("1.0.2-dev.4+desktop.qa");
+    expect(restored.moduleVersion).toBe(
+      "1.0.2-dev.4+desktop.qa",
+    );
+  });
+
+  it("rejects numeric prerelease identifiers with leading zeroes", () => {
+    const project = makeProject();
+    expectInvalid(
+      { ...project, moduleVersion: "1.0.0-01" },
+      "invalid-project",
+    );
+  });
+
   it("keeps optional print mapping separate while preserving explicit null", () => {
     const withoutMapping = makeProject();
     const explicitNull = makeProject({ printMapping: null });

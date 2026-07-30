@@ -220,12 +220,17 @@ export function BeadWorkshopModule({
   const [resumed, setResumed] = useState(false);
   const [colorLibrary, setColorLibrary] =
     useState<WorkshopColorLibrary | null>(null);
+  const [colorLibraryRefreshing, setColorLibraryRefreshing] =
+    useState(false);
   const [previewColorMode, setPreviewColorMode] = useState<
     "source" | "print"
   >("source");
   const engineRef = useRef<BeadProcessingEngine | null>(null);
   const latestProjectRef = useRef<BeadProject | null>(null);
   const readyReportedRef = useRef(false);
+  const colorLibraryRequestRef = useRef(0);
+  const colorLibraryFlightRef =
+    useRef<Promise<WorkshopColorLibrary | null> | null>(null);
   const editorProject = editorState?.present ?? null;
   const colorMapping = useMemo(
     () =>
@@ -301,6 +306,47 @@ export function BeadWorkshopModule({
     [client, t],
   );
 
+  const refreshColorLibrary = useCallback(() => {
+    if (colorLibraryFlightRef.current) {
+      return colorLibraryFlightRef.current;
+    }
+    const requestId = colorLibraryRequestRef.current + 1;
+    colorLibraryRequestRef.current = requestId;
+    setColorLibraryRefreshing(true);
+    const request = client.colorLibrary
+      .read()
+      .then((library) => {
+        if (colorLibraryRequestRef.current === requestId) {
+          setColorLibrary(library);
+        }
+        return library;
+      })
+      .catch(() => {
+        if (colorLibraryRequestRef.current === requestId) {
+          setColorLibrary(null);
+        }
+        return null;
+      })
+      .finally(() => {
+        if (colorLibraryFlightRef.current === request) {
+          colorLibraryFlightRef.current = null;
+        }
+        if (colorLibraryRequestRef.current === requestId) {
+          setColorLibraryRefreshing(false);
+        }
+      });
+    colorLibraryFlightRef.current = request;
+    return request;
+  }, [client]);
+
+  useEffect(() => {
+    void refreshColorLibrary();
+    return () => {
+      colorLibraryRequestRef.current += 1;
+      colorLibraryFlightRef.current = null;
+    };
+  }, [refreshColorLibrary]);
+
   useEffect(() => {
     if (!projectSource || typeof URL.createObjectURL !== "function") {
       setSourceUrl(null);
@@ -315,12 +361,8 @@ export function BeadWorkshopModule({
     let cancelled = false;
     const restore = async () => {
       try {
-        const [project, library] = await Promise.all([
-          latestBeadProject(client),
-          client.colorLibrary.read().catch(() => null),
-        ]);
+        const project = await latestBeadProject(client);
         if (cancelled) return;
-        setColorLibrary(library);
         if (!project) {
           setStage("upload");
           setInitialized(true);
@@ -885,6 +927,7 @@ export function BeadWorkshopModule({
             onHandoff={handleHandoff}
             handoffBusy={handoffBusy}
             colorLibrary={colorLibrary}
+            colorLibraryRefreshing={colorLibraryRefreshing}
             printMapping={editorProject?.printMapping ?? null}
             printMappingStale={colorMapping?.stale ?? false}
             previewColorMode={previewColorMode}
@@ -895,6 +938,7 @@ export function BeadWorkshopModule({
                 : null
             }
             onPreviewColorModeChange={setPreviewColorMode}
+            onReloadColorLibrary={refreshColorLibrary}
             onRefreshPrintMapping={refreshPrintMapping}
             onSetPrintMappingEntry={setPrintMappingEntry}
           />

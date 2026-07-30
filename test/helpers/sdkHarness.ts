@@ -14,6 +14,7 @@ interface HarnessOptions {
   latestProject?: WorkshopProjectRecord<unknown> | null;
   pickedImage?: WorkshopPickedImage | null;
   colorLibrary?: WorkshopColorLibrary | null;
+  colorLibraries?: Array<WorkshopColorLibrary | null>;
   uiState?: WorkshopUiState;
   handoffStatuses?: Array<"needs-confirmation" | "completed">;
 }
@@ -40,6 +41,7 @@ export function createSdkHarness(
   const ports: Array<InstanceType<typeof MessageChannel>["port1"]> = [];
   let messageListener: MessageListener | null = null;
   let handoffIndex = 0;
+  let colorLibraryIndex = 0;
 
   const parent = {
     postMessage(message: unknown) {
@@ -88,7 +90,18 @@ export function createSdkHarness(
             result = options.pickedImage ?? null;
             break;
           case "colorLibrary.read":
-            result = options.colorLibrary ?? null;
+            if (options.colorLibraries) {
+              result =
+                options.colorLibraries[
+                  Math.min(
+                    colorLibraryIndex,
+                    options.colorLibraries.length - 1,
+                  )
+                ] ?? null;
+              colorLibraryIndex += 1;
+            } else {
+              result = options.colorLibrary ?? null;
+            }
             break;
           case "handoff.image": {
             const statuses = options.handoffStatuses ?? ["completed"];
