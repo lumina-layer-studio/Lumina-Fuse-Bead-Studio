@@ -934,6 +934,7 @@ export function BeadWorkshopModule({
             imageSrc={sourceUrl}
             imageWidth={originalRaster.width}
             imageHeight={originalRaster.height}
+            initialCrop={crop}
             translate={t}
             onConfirm={(cropData) =>
               applyCrop(normalizedCrop(originalRaster, cropData))

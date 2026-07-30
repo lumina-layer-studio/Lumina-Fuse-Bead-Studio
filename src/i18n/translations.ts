@@ -119,7 +119,9 @@ const zhCN = {
   "workshop.bead.saveError":
     "自动保存暂时失败。当前页面中的编辑不会丢失。",
   "crop.title": "裁剪图案",
-  "crop.description": "输入要保留的像素区域；稍后仍可重新裁剪。",
+  "crop.description":
+    "在预览图上拖拽选择要保留的区域；下方数值可用于精确调整。",
+  "crop.previewAria": "拖拽选择要保留的图案区域",
   "crop.x": "左边距",
   "crop.y": "上边距",
   "crop.width": "宽度",
@@ -257,7 +259,8 @@ const enUS = {
     "Autosave temporarily failed. Edits in the current page are still intact.",
   "crop.title": "Crop pattern",
   "crop.description":
-    "Enter the pixel area to keep. You can crop again later.",
+    "Drag on the preview to select the area to keep. Use the values below for precise adjustments.",
+  "crop.previewAria": "Drag to select the pattern area to keep",
   "crop.x": "Left",
   "crop.y": "Top",
   "crop.width": "Width",
