@@ -74,8 +74,9 @@ async function projectForStorage(
   project: BeadProject,
 ): Promise<StoredBeadProject> {
   const source = project.source;
+  const { printMapping, ...projectWithoutPrintMapping } = project;
   return {
-    ...project,
+    ...projectWithoutPrintMapping,
     palette: project.palette.map((color) => [...color]),
     cells: project.cells.map((cell) => ({ ...cell })),
     confidenceIssues: project.confidenceIssues.map((issue) => ({
@@ -100,6 +101,18 @@ async function projectForStorage(
           pixelHeight: source.pixelHeight,
         }
       : null,
+    ...(printMapping !== undefined
+      ? {
+          printMapping: printMapping
+            ? {
+                ...printMapping,
+                entries: printMapping.entries.map((entry) => ({
+                  ...entry,
+                })),
+              }
+            : null,
+        }
+      : {}),
   } as StoredBeadProject;
 }
 

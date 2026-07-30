@@ -1,10 +1,12 @@
 import type {
   WorkshopClient,
+  WorkshopColorLibrary,
   WorkshopImageHandoff,
 } from "@lumina/workshop-sdk";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -37,6 +39,11 @@ import {
   pickBeadSource,
   saveBeadProject,
 } from "../host/hostAdapter";
+import {
+  mapProjectToColorLibrary,
+  projectForPrintPreview,
+  setManualColorMapping,
+} from "../host/colorMapping";
 import {
   browserBeadImageCodec,
   type BeadImageCodec,
@@ -214,10 +221,43 @@ export function BeadWorkshopModule({
   const [pendingHandoff, setPendingHandoff] =
     useState<PendingHandoff | null>(null);
   const [resumed, setResumed] = useState(false);
+  const [colorLibrary, setColorLibrary] =
+    useState<WorkshopColorLibrary | null>(null);
+  const [previewColorMode, setPreviewColorMode] = useState<
+    "source" | "print"
+  >("source");
   const engineRef = useRef<BeadProcessingEngine | null>(null);
   const latestProjectRef = useRef<BeadProject | null>(null);
   const readyReportedRef = useRef(false);
   const editorProject = editorState?.present ?? null;
+  const colorMapping = useMemo(
+    () =>
+      editorProject
+        ? mapProjectToColorLibrary(editorProject, colorLibrary)
+        : null,
+    [colorLibrary, editorProject],
+  );
+  const hasCurrentPrintMapping =
+    editorProject?.printMapping !== null &&
+    editorProject?.printMapping !== undefined &&
+    colorLibrary !== null &&
+    editorProject.printMapping.libraryId === colorLibrary.id &&
+    colorMapping?.stale === false;
+  const renderProject = useMemo(
+    () =>
+      editorProject &&
+      colorMapping &&
+      previewColorMode === "print" &&
+      hasCurrentPrintMapping
+        ? projectForPrintPreview(editorProject, colorMapping)
+        : editorProject,
+    [
+      colorMapping,
+      editorProject,
+      hasCurrentPrintMapping,
+      previewColorMode,
+    ],
+  );
 
   const getEngine = useCallback(() => {
     engineRef.current ??= createEngine();
@@ -278,8 +318,12 @@ export function BeadWorkshopModule({
     let cancelled = false;
     const restore = async () => {
       try {
-        const project = await latestBeadProject(client);
+        const [project, library] = await Promise.all([
+          latestBeadProject(client),
+          client.colorLibrary.read().catch(() => null),
+        ]);
         if (cancelled) return;
+        setColorLibrary(library);
         if (!project) {
           setStage("upload");
           setInitialized(true);
@@ -350,14 +394,23 @@ export function BeadWorkshopModule({
   }, [client]);
 
   useEffect(() => {
-    if (!editorProject) {
+    if (
+      previewColorMode === "print" &&
+      !hasCurrentPrintMapping
+    ) {
+      setPreviewColorMode("source");
+    }
+  }, [hasCurrentPrintMapping, previewColorMode]);
+
+  useEffect(() => {
+    if (!renderProject) {
       setRenderResult(null);
       setRenderBusy(false);
       return undefined;
     }
     let cancelled = false;
     const engine = getEngine();
-    const project = editorProject;
+    const project = renderProject;
     const previewTask = engine.render(
       project,
       project.compression,
@@ -401,7 +454,7 @@ export function BeadWorkshopModule({
       engine.cancel(previewTask.id);
       if (fullTask) engine.cancel(fullTask.id);
     };
-  }, [editorProject, getEngine, reportProcessingError]);
+  }, [getEngine, renderProject, reportProcessingError]);
 
   useEffect(() => {
     if (!initialized || !editorProject) return;
@@ -651,7 +704,9 @@ export function BeadWorkshopModule({
             columns: project.columns,
             pitchMm: project.beadPitchMm,
           },
-          colorLibraryId: null,
+          colorLibraryId: hasCurrentPrintMapping
+            ? project.printMapping?.libraryId ?? null
+            : null,
           recipeSource: structuredClone(
             createBeadRecipeSource(project),
           ),
@@ -684,6 +739,39 @@ export function BeadWorkshopModule({
     }
   };
 
+  const refreshPrintMapping = () => {
+    const project = editorState?.present;
+    if (!project || !colorLibrary) return;
+    const mapped = mapProjectToColorLibrary(
+      { ...project, printMapping: null },
+      colorLibrary,
+    );
+    dispatchEditor({
+      type: "set-print-mapping",
+      printMapping: mapped.printMapping,
+      updatedAt: new Date().toISOString(),
+    });
+    if (mapped.printMapping) setPreviewColorMode("print");
+  };
+
+  const setPrintMappingEntry = (
+    sourcePaletteIndex: number,
+    colorEntryId: string,
+  ) => {
+    if (!colorLibrary || !colorMapping?.printMapping) return;
+    const next = setManualColorMapping(
+      colorMapping.printMapping,
+      colorLibrary,
+      sourcePaletteIndex,
+      colorEntryId,
+    );
+    dispatchEditor({
+      type: "set-print-mapping",
+      printMapping: next,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
   const handleNewProject = () => {
     const latest = latestProjectRef.current;
     if (latest) void persistProject(latest);
@@ -701,6 +789,7 @@ export function BeadWorkshopModule({
     setHandoffBusy(false);
     setVisibleError(null);
     setResumed(false);
+    setPreviewColorMode("source");
     latestProjectRef.current = null;
   };
 
@@ -779,6 +868,19 @@ export function BeadWorkshopModule({
             onNewProject={handleNewProject}
             onHandoff={handleHandoff}
             handoffBusy={handoffBusy}
+            colorLibrary={colorLibrary}
+            printMapping={editorProject?.printMapping ?? null}
+            printMappingStale={colorMapping?.stale ?? false}
+            previewColorMode={previewColorMode}
+            displayPalette={
+              previewColorMode === "print" &&
+              hasCurrentPrintMapping
+                ? colorMapping?.previewPalette ?? null
+                : null
+            }
+            onPreviewColorModeChange={setPreviewColorMode}
+            onRefreshPrintMapping={refreshPrintMapping}
+            onSetPrintMappingEntry={setPrintMappingEntry}
           />
         ) : null}
 

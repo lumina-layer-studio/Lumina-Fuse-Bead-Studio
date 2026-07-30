@@ -69,6 +69,17 @@ export interface BeadConfidenceIssue {
   resolved: boolean;
 }
 
+export interface BeadPrintMappingEntry {
+  sourcePaletteIndex: number;
+  colorEntryId: string;
+}
+
+export interface BeadPrintMapping {
+  libraryId: string;
+  libraryLabel: string;
+  entries: BeadPrintMappingEntry[];
+}
+
 export interface BeadProject {
   schemaVersion: typeof BEAD_PROJECT_SCHEMA_VERSION;
   renderSchemaVersion: typeof BEAD_RENDER_SCHEMA_VERSION;
@@ -86,6 +97,7 @@ export interface BeadProject {
   confidenceIssues: BeadConfidenceIssue[];
   beadPitchMm: number;
   compression: number;
+  printMapping?: BeadPrintMapping | null;
 }
 
 export type BeadCellRun = readonly [token: number, count: number];
@@ -103,6 +115,7 @@ export interface CreateBeadProjectInput {
   confidenceIssues?: BeadConfidenceIssue[];
   beadPitchMm?: number;
   compression?: number;
+  printMapping?: BeadPrintMapping | null;
 }
 
 export interface RestoreBeadProjectOptions {

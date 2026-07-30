@@ -16,6 +16,7 @@ import {
   type BeadConfidenceIssue,
   type BeadInputMode,
   type BeadOrientation,
+  type BeadPrintMapping,
   type BeadProject,
   type CreateBeadProjectInput,
   type RestoreBeadProjectOptions,
@@ -230,6 +231,58 @@ function validateConfidenceIssues(
   }
 }
 
+function validatePrintMapping(
+  mapping: unknown,
+  paletteLength: number,
+): asserts mapping is BeadPrintMapping | null | undefined {
+  if (mapping === undefined || mapping === null) {
+    return;
+  }
+  if (
+    typeof mapping !== "object" ||
+    Array.isArray(mapping) ||
+    mapping === null
+  ) {
+    fail("invalid-print-mapping", "Print color mapping is invalid.");
+  }
+  const candidate = mapping as Record<string, unknown>;
+  if (
+    typeof candidate.libraryId !== "string" ||
+    candidate.libraryId.length === 0 ||
+    candidate.libraryId.length > 256 ||
+    typeof candidate.libraryLabel !== "string" ||
+    candidate.libraryLabel.length === 0 ||
+    candidate.libraryLabel.length > 256 ||
+    !Array.isArray(candidate.entries) ||
+    candidate.entries.length > paletteLength
+  ) {
+    fail("invalid-print-mapping", "Print color mapping is invalid.");
+  }
+  const mappedPaletteIndices = new Set<number>();
+  for (const entry of candidate.entries) {
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      Array.isArray(entry)
+    ) {
+      fail("invalid-print-mapping", "Print color mapping entry is invalid.");
+    }
+    const value = entry as Record<string, unknown>;
+    if (
+      !Number.isInteger(value.sourcePaletteIndex) ||
+      (value.sourcePaletteIndex as number) < 0 ||
+      (value.sourcePaletteIndex as number) >= paletteLength ||
+      mappedPaletteIndices.has(value.sourcePaletteIndex as number) ||
+      typeof value.colorEntryId !== "string" ||
+      value.colorEntryId.length === 0 ||
+      value.colorEntryId.length > 256
+    ) {
+      fail("invalid-print-mapping", "Print color mapping entry is invalid.");
+    }
+    mappedPaletteIndices.add(value.sourcePaletteIndex as number);
+  }
+}
+
 function validateSource(source: unknown): void {
   if (source === null) {
     return;
@@ -296,6 +349,7 @@ export function validateBeadProject(value: unknown): BeadProject {
   validateSource(project.source);
   validateCalibration(project.calibration, expectedCellCount);
   validateConfidenceIssues(project.confidenceIssues, expectedCellCount);
+  validatePrintMapping(project.printMapping, project.palette.length);
 
   if (
     !isFiniteNumber(project.beadPitchMm) ||
@@ -357,6 +411,9 @@ export function createBeadProject(
     confidenceIssues: input.confidenceIssues ?? [],
     beadPitchMm: input.beadPitchMm ?? DEFAULT_BEAD_PITCH_MM,
     compression: input.compression ?? DEFAULT_BEAD_COMPRESSION,
+    ...(input.printMapping !== undefined
+      ? { printMapping: input.printMapping }
+      : {}),
   };
   return validateBeadProject(project);
 }

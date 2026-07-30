@@ -83,6 +83,14 @@ describe("BeadEditorStep", () => {
     expect(
       screen.getByRole("heading", { name: "编辑拼豆矩阵" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "当前打印色库" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Lumina 当前没有可用的 LUT 或耗材档案，仍可使用图纸原色编辑。",
+      ),
+    ).toBeInTheDocument();
     const tools = [
       ["画笔", "paint"],
       ["橡皮", "erase"],
@@ -293,5 +301,60 @@ describe("BeadEditorStep", () => {
         name: "交给 Lumina 转换",
       }),
     ).toBeDisabled();
+  });
+
+  it("shows a stale action instead of silently replacing an old library mapping", () => {
+    const old = {
+      ...project(),
+      printMapping: {
+        libraryId: "lut:old",
+        libraryLabel: "旧色库",
+        entries: [
+          { sourcePaletteIndex: 0, colorEntryId: "old-red" },
+          { sourcePaletteIndex: 1, colorEntryId: "old-blue" },
+        ],
+      },
+    };
+    const onRefresh = vi.fn();
+    render(
+      <BeadEditorStep
+        state={createBeadEditorState(old)}
+        renderResult={null}
+        renderBusy={false}
+        sourceRaster={null}
+        translate={t}
+        dispatch={vi.fn()}
+        onNewProject={vi.fn()}
+        colorLibrary={{
+          id: "lut:new",
+          label: "新色库",
+          sourceKind: "lut",
+          colors: [
+            {
+              id: "new-red",
+              label: "新红",
+              hex: "#E3212A",
+              materialId: null,
+            },
+          ],
+        }}
+        printMapping={old.printMapping}
+        printMappingStale
+        onRefreshPrintMapping={onRefresh}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "当前打印色库" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Lumina 的当前色库已经变化；旧映射不会被静默替换。",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "按当前色库重新映射" }),
+    );
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 });

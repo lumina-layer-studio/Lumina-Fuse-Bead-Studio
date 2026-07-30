@@ -64,6 +64,19 @@ const zhCN = {
   "workshop.bead.view.original": "原图",
   "workshop.bead.view.matrix": "识别矩阵",
   "workshop.bead.view.pressure": "压合预览",
+  "workshop.bead.preview.source": "图纸原色",
+  "workshop.bead.preview.print": "当前打印色库",
+  "workshop.bead.printLibraryUnavailable":
+    "Lumina 当前没有可用的 LUT 或耗材档案，仍可使用图纸原色编辑。",
+  "workshop.bead.printMappingRequired":
+    "先生成一次打印色映射，再预览当前色库。",
+  "workshop.bead.printMappingStale":
+    "Lumina 的当前色库已经变化；旧映射不会被静默替换。",
+  "workshop.bead.createPrintMapping": "生成打印色映射",
+  "workshop.bead.refreshPrintMapping": "按当前色库重新映射",
+  "workshop.bead.printMappingTitle": "作品用色 → Lumina 可打印色",
+  "workshop.bead.printColorFor": "作品颜色 {index}",
+  "workshop.bead.printLibraryLabel": "当前色库：{label}",
   "workshop.bead.matrixCanvas": "可编辑拼豆矩阵",
   "workshop.bead.pressureCanvas": "拼豆压合预览",
   "workshop.bead.originalCanvas": "拼豆图纸原图",
@@ -177,6 +190,20 @@ const enUS = {
   "workshop.bead.view.original": "Original",
   "workshop.bead.view.matrix": "Matrix",
   "workshop.bead.view.pressure": "Pressure preview",
+  "workshop.bead.preview.source": "Source colors",
+  "workshop.bead.preview.print": "Current print library",
+  "workshop.bead.printLibraryUnavailable":
+    "Lumina has no current LUT or material archive. You can keep editing with source colors.",
+  "workshop.bead.printMappingRequired":
+    "Create a print-color mapping before previewing the current library.",
+  "workshop.bead.printMappingStale":
+    "Lumina's current library changed. The old mapping will not be silently replaced.",
+  "workshop.bead.createPrintMapping": "Create print mapping",
+  "workshop.bead.refreshPrintMapping": "Remap to current library",
+  "workshop.bead.printMappingTitle":
+    "Artwork colors → Lumina printable colors",
+  "workshop.bead.printColorFor": "Artwork color {index}",
+  "workshop.bead.printLibraryLabel": "Current library: {label}",
   "workshop.bead.matrixCanvas": "Editable bead matrix",
   "workshop.bead.pressureCanvas": "Bead pressure preview",
   "workshop.bead.originalCanvas": "Original bead pattern",

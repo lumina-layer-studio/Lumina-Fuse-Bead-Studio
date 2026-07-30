@@ -1,3 +1,4 @@
+import type { WorkshopColorLibrary } from "@lumina/workshop-sdk";
 import { useMemo, useState } from "react";
 
 import type {
@@ -7,7 +8,11 @@ import type {
 } from "../domain/editorReducer";
 import { calculatePhysicalSize } from "../domain/project";
 import type { BeadRenderResult } from "../domain/renderer";
-import type { Raster, RgbColor } from "../domain/types";
+import type {
+  BeadPrintMapping,
+  Raster,
+  RgbColor,
+} from "../domain/types";
 import { interpolate } from "../i18n/translations";
 import Button from "../ui/Button";
 import Checkbox from "../ui/Checkbox";
@@ -33,6 +38,17 @@ interface BeadEditorStepProps {
   onNewProject(): void;
   onHandoff?(): void;
   handoffBusy?: boolean;
+  colorLibrary?: WorkshopColorLibrary | null;
+  printMapping?: BeadPrintMapping | null;
+  printMappingStale?: boolean;
+  previewColorMode?: "source" | "print";
+  displayPalette?: RgbColor[] | null;
+  onPreviewColorModeChange?(mode: "source" | "print"): void;
+  onRefreshPrintMapping?(): void;
+  onSetPrintMappingEntry?(
+    sourcePaletteIndex: number,
+    colorEntryId: string,
+  ): void;
 }
 
 function toHex(color: RgbColor): string {
@@ -66,6 +82,14 @@ export function BeadEditorStep({
   onNewProject,
   onHandoff,
   handoffBusy = false,
+  colorLibrary = null,
+  printMapping = null,
+  printMappingStale = false,
+  previewColorMode = "source",
+  displayPalette = null,
+  onPreviewColorModeChange,
+  onRefreshPrintMapping,
+  onSetPrintMappingEntry,
 }: BeadEditorStepProps) {
   const [view, setView] = useState<EditorView>("matrix");
   const [showGrid, setShowGrid] = useState(true);
@@ -84,6 +108,33 @@ export function BeadEditorStep({
   const hasColoredBeads = useMemo(
     () => project.cells.some((cell) => cell.kind === "color"),
     [project.cells],
+  );
+  const hasCurrentPrintMapping =
+    colorLibrary !== null &&
+    printMapping !== null &&
+    printMapping.libraryId === colorLibrary.id &&
+    !printMappingStale;
+  const displayProject = useMemo(
+    () =>
+      displayPalette
+        ? {
+            ...project,
+            palette: displayPalette.map(
+              (color) => [...color] as RgbColor,
+            ),
+          }
+        : project,
+    [displayPalette, project],
+  );
+  const mappingByPaletteIndex = useMemo(
+    () =>
+      new Map(
+        printMapping?.entries.map((entry) => [
+          entry.sourcePaletteIndex,
+          entry.colorEntryId,
+        ]) ?? [],
+      ),
+    [printMapping],
   );
 
   const selectIssue = (direction: -1 | 1) => {
@@ -147,6 +198,118 @@ export function BeadEditorStep({
 
       <div className="workbench-layout">
         <aside className="panel panel--controls">
+          <div className="preview-mode">
+            <p className="field-label">
+              {t("workshop.bead.printMappingTitle")}
+            </p>
+            <div className="control-row">
+              <button
+                type="button"
+                className="segmented-control"
+                aria-pressed={previewColorMode === "source"}
+                onClick={() =>
+                  onPreviewColorModeChange?.("source")
+                }
+              >
+                {t("workshop.bead.preview.source")}
+              </button>
+              <button
+                type="button"
+                className="segmented-control"
+                aria-pressed={previewColorMode === "print"}
+                disabled={!hasCurrentPrintMapping}
+                onClick={() =>
+                  onPreviewColorModeChange?.("print")
+                }
+              >
+                {t("workshop.bead.preview.print")}
+              </button>
+            </div>
+            {colorLibrary ? (
+              <p className="sample-summary">
+                {interpolate(
+                  t("workshop.bead.printLibraryLabel"),
+                  { label: colorLibrary.label },
+                )}
+              </p>
+            ) : (
+              <StatusBanner>
+                {t("workshop.bead.printLibraryUnavailable")}
+              </StatusBanner>
+            )}
+            {colorLibrary && !printMapping ? (
+              <div className="mapping-action">
+                <p className="sample-summary">
+                  {t("workshop.bead.printMappingRequired")}
+                </p>
+                <Button
+                  label={t("workshop.bead.createPrintMapping")}
+                  variant="secondary"
+                  size="small"
+                  onClick={onRefreshPrintMapping}
+                />
+              </div>
+            ) : null}
+            {colorLibrary && printMappingStale ? (
+              <div className="mapping-action">
+                <StatusBanner tone="warning">
+                  {t("workshop.bead.printMappingStale")}
+                </StatusBanner>
+                <Button
+                  label={t("workshop.bead.refreshPrintMapping")}
+                  variant="secondary"
+                  size="small"
+                  onClick={onRefreshPrintMapping}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          {colorLibrary && hasCurrentPrintMapping ? (
+            <div className="print-mapping-list">
+              {project.palette.map((sourceColor, index) => (
+                <label className="print-mapping-row" key={index}>
+                  <span
+                    className="print-mapping-row__source"
+                    aria-hidden
+                    style={{
+                      backgroundColor: `rgb(${sourceColor[0]} ${sourceColor[1]} ${sourceColor[2]})`,
+                    }}
+                  />
+                  <span className="field-label">
+                    {interpolate(
+                      t("workshop.bead.printColorFor"),
+                      { index: index + 1 },
+                    )}
+                  </span>
+                  <select
+                    className={workstationInputClass}
+                    aria-label={interpolate(
+                      t("workshop.bead.printColorFor"),
+                      { index: index + 1 },
+                    )}
+                    value={mappingByPaletteIndex.get(index) ?? ""}
+                    onChange={(event) =>
+                      onSetPrintMappingEntry?.(
+                        index,
+                        event.target.value,
+                      )
+                    }
+                  >
+                    {colorLibrary.colors.map((entry, entryIndex) => (
+                      <option
+                        key={`${entry.id}-${entryIndex}`}
+                        value={entry.id}
+                      >
+                        {entry.label} · {entry.hex}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          ) : null}
+
           <div className="control-grid">
             {toolNames.map((tool) => (
               <button
@@ -384,7 +547,7 @@ export function BeadEditorStep({
               />
             ) : view === "pressure" ? (
               <BeadMatrixCanvas
-                project={project}
+                project={displayProject}
                 renderResult={renderResult}
                 showGrid={false}
                 selectedCellIndex={state.selectedCellIndex}
@@ -392,7 +555,7 @@ export function BeadEditorStep({
               />
             ) : (
               <BeadMatrixCanvas
-                project={project}
+                project={displayProject}
                 showGrid={showGrid}
                 selectedCellIndex={state.selectedCellIndex}
                 onPickCell={applyAt}
@@ -405,7 +568,7 @@ export function BeadEditorStep({
             <div className="magnifier">
               <p>{t("workshop.bead.magnifier")}</p>
               <BeadMatrixCanvas
-                project={project}
+                project={displayProject}
                 ariaLabel={t("workshop.bead.magnifier")}
                 showGrid
                 selectedCellIndex={state.selectedCellIndex}

@@ -221,6 +221,106 @@ describe("BeadWorkshopModule", () => {
     harness.close();
   });
 
+  it("keeps source colors authoritative while explicitly mapping every library entry", async () => {
+    const project = createBeadProject({
+      projectId: "print-mapping",
+      moduleVersion: "1.0.0",
+      now: "2026-07-30T00:00:00.000Z",
+      rows: 1,
+      columns: 2,
+      palette: [
+        [250, 20, 30],
+        [10, 220, 80],
+      ],
+      cells: [
+        { kind: "color", paletteIndex: 0 },
+        { kind: "color", paletteIndex: 1 },
+      ],
+    });
+    const harness = createSdkHarness({
+      latestProject: {
+        projectId: project.projectId,
+        schemaVersion: project.schemaVersion,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+        project,
+      },
+      colorLibrary: {
+        id: "material-archive:official",
+        label: "官方 PLA",
+        sourceKind: "material-archive",
+        colors: [
+          {
+            id: "official-red",
+            label: "官方红",
+            hex: "#E3212A",
+            materialId: "red-material",
+          },
+          {
+            id: "community-red",
+            label: "社区红",
+            hex: "#E3212A",
+            materialId: "community-red-material",
+          },
+          {
+            id: "official-green",
+            label: "官方绿",
+            hex: "#25A55F",
+            materialId: "green-material",
+          },
+        ],
+      },
+    });
+    const client = await harness.connect();
+    render(
+      <BeadWorkshopModule
+        client={client}
+        locale="zh-CN"
+        createEngine={() => new FakeEngine()}
+        imageCodec={codec}
+        autosaveDelayMs={0}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+    const printPreview = screen.getByRole("button", {
+      name: "当前打印色库",
+    });
+    expect(printPreview).toBeDisabled();
+    expect(
+      screen.getByText("当前色库：官方 PLA"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "生成打印色映射" }),
+    );
+    await waitFor(() => expect(printPreview).toBeEnabled());
+    expect(printPreview).toHaveAttribute("aria-pressed", "true");
+
+    const firstColor = screen.getByRole("combobox", {
+      name: "作品颜色 1",
+    });
+    expect(firstColor.querySelectorAll("option")).toHaveLength(3);
+    fireEvent.change(firstColor, {
+      target: { value: "community-red" },
+    });
+    await waitFor(() => {
+      const saved = harness.savedProjects().at(-1)?.project as
+        | BeadProject
+        | undefined;
+      expect(saved?.printMapping?.entries[0]).toEqual({
+        sourcePaletteIndex: 0,
+        colorEntryId: "community-red",
+      });
+    });
+    const saved = harness.savedProjects().at(-1)
+      ?.project as BeadProject;
+    expect(saved.palette).toEqual(project.palette);
+
+    client.close();
+    harness.close();
+  });
+
   it("sends exact PNG handoff bytes and retries only after confirmation", async () => {
     const harness = createSdkHarness({
       pickedImage: {

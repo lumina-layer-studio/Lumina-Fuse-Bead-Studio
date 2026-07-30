@@ -351,6 +351,42 @@ select:focus-visible,
   flex: 1 1 0;
 }
 
+.preview-mode,
+.mapping-action {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-mode > p,
+.mapping-action > p {
+  margin: 0;
+}
+
+.print-mapping-list {
+  display: flex;
+  max-height: 240px;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  border-block: 1px solid var(--bead-border);
+  padding-block: 10px;
+}
+
+.print-mapping-row {
+  display: grid;
+  grid-template-columns: 24px minmax(72px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.print-mapping-row__source {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--bead-border);
+  border-radius: 50%;
+}
+
 .status-banner {
   border: 1px solid
     color-mix(in srgb, var(--bead-accent) 24%, var(--bead-border));

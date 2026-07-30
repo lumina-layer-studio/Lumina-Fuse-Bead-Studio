@@ -1,6 +1,7 @@
 import { validateBeadProject } from "./project";
 import type {
   BeadCell,
+  BeadPrintMapping,
   BeadProject,
   RgbColor,
 } from "./types";
@@ -72,6 +73,11 @@ export type BeadEditorAction =
   | {
       type: "add-palette-color";
       color: RgbColor;
+      updatedAt?: string;
+    }
+  | {
+      type: "set-print-mapping";
+      printMapping: BeadPrintMapping | null;
       updatedAt?: string;
     }
   | { type: "undo" }
@@ -372,6 +378,23 @@ export function beadEditorReducer(
           ...state.present.palette,
           [...action.color] as RgbColor,
         ],
+        updatedAt: action.updatedAt ?? state.present.updatedAt,
+      }),
+    };
+  }
+  if (action.type === "set-print-mapping") {
+    return {
+      ...state,
+      present: validateBeadProject({
+        ...state.present,
+        printMapping: action.printMapping
+          ? {
+              ...action.printMapping,
+              entries: action.printMapping.entries.map((entry) => ({
+                ...entry,
+              })),
+            }
+          : null,
         updatedAt: action.updatedAt ?? state.present.updatedAt,
       }),
     };

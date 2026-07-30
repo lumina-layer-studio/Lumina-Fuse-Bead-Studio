@@ -74,6 +74,40 @@ describe("bead project model", () => {
       compression: 50,
     });
     expect(validateBeadProject(project)).toBe(project);
+    expect("printMapping" in project).toBe(false);
+  });
+
+  it("keeps optional print mapping separate while preserving explicit null", () => {
+    const withoutMapping = makeProject();
+    const explicitNull = makeProject({ printMapping: null });
+    const mapped = makeProject({
+      printMapping: {
+        libraryId: "lut:official",
+        libraryLabel: "Official LUT",
+        entries: [
+          { sourcePaletteIndex: 0, colorEntryId: "official-red" },
+          { sourcePaletteIndex: 1, colorEntryId: "official-blue" },
+        ],
+      },
+    });
+
+    expect("printMapping" in withoutMapping).toBe(false);
+    expect(explicitNull.printMapping).toBeNull();
+    expect(validateBeadProject(mapped).printMapping).toEqual(
+      mapped.printMapping,
+    );
+    expectInvalid(
+      {
+        ...mapped,
+        printMapping: {
+          ...mapped.printMapping,
+          entries: [
+            { sourcePaletteIndex: 99, colorEntryId: "outside" },
+          ],
+        },
+      },
+      "invalid-print-mapping",
+    );
   });
 
   it("trims only all-empty outer rows and columns", () => {
