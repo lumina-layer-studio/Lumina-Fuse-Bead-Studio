@@ -9,6 +9,10 @@ test("build contains the worker and every runtime asset in one HTML file", async
   const html = await readFile("dist/ui/index.html", "utf8");
   assert.doesNotMatch(html, /<script[^>]+src=/i);
   assert.doesNotMatch(html, /new Worker\(["'][^"']+\.js/i);
+  assert.match(
+    html,
+    /new Worker\(["']data:text\/javascript;charset=utf-8,/i,
+  );
   assert.doesNotMatch(
     html,
     /<(?:script|link|img)[^>]+(?:src|href)=["']https?:\/\//i,
