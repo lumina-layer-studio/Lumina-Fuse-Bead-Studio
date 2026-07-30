@@ -40,3 +40,37 @@ test("packages byte-for-byte identically on consecutive runs", async () => {
   const second = await readFile(assetPath);
   assert.deepEqual(second, first);
 });
+
+test("packages byte-for-byte identically across build time zones", async () => {
+  const utcResult = spawnSync(
+    process.execPath,
+    ["scripts/package.mjs"],
+    {
+      encoding: "utf8",
+      env: { ...process.env, TZ: "UTC" },
+    },
+  );
+  assert.equal(
+    utcResult.status,
+    0,
+    utcResult.stderr || utcResult.stdout,
+  );
+  const utcArchive = await readFile(assetPath);
+
+  const shanghaiResult = spawnSync(
+    process.execPath,
+    ["scripts/package.mjs"],
+    {
+      encoding: "utf8",
+      env: { ...process.env, TZ: "Asia/Shanghai" },
+    },
+  );
+  assert.equal(
+    shanghaiResult.status,
+    0,
+    shanghaiResult.stderr || shanghaiResult.stdout,
+  );
+  const shanghaiArchive = await readFile(assetPath);
+
+  assert.deepEqual(shanghaiArchive, utcArchive);
+});

@@ -11,7 +11,10 @@ import path from "node:path";
 import { zipSync } from "fflate";
 
 const MAX_PACKAGE_BYTES = 100 * 1024 * 1024;
-const FIXED_MTIME = new Date("2000-01-01T00:00:00.000Z");
+// ZIP stores DOS wall-clock fields without a timezone. Constructing this
+// timestamp from UTC shifts those fields on non-UTC builders, so use the same
+// local wall-clock value everywhere.
+const FIXED_MTIME = new Date(2000, 0, 1, 0, 0, 0, 0);
 
 async function readJson(file) {
   const text = await readFile(file, "utf8");
