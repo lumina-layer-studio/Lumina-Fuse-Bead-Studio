@@ -1,0 +1,8 @@
+{
+  "preview52Ms": 1000,
+  "full104Ms": 10000,
+  "mainThreadMaxSliceMs": 200,
+  "peakTransferredBytes": 100000000,
+  "releasedWorkerCount": 1,
+  "releasedBlobUrlCount": 1
+}
