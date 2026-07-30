@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@lumina/workshop-sdk':
-        specifier: file:vendor/lumina-workshop-sdk-1.0.0.tgz
-        version: file:vendor/lumina-workshop-sdk-1.0.0.tgz
+        specifier: https://github.com/lumina-layer-studio/Lumina-Workshop-SDK/releases/download/v1.0.1/lumina-workshop-sdk-1.0.1.tgz
+        version: https://github.com/lumina-layer-studio/Lumina-Workshop-SDK/releases/download/v1.0.1/lumina-workshop-sdk-1.0.1.tgz
       react:
         specifier: 19.1.0
         version: 19.1.0
@@ -353,9 +353,10 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@lumina/workshop-sdk@file:vendor/lumina-workshop-sdk-1.0.0.tgz':
-    resolution: {integrity: sha512-cEgbt7Smkh3WqX+CT1A+rvIHAhm7wNmnPOItry2D02AbdtS6cc0CNuzqiG1RrXRHC+1m9Wdtl3NkwNNHfj4uBg==, tarball: file:vendor/lumina-workshop-sdk-1.0.0.tgz}
-    version: 1.0.0
+  '@lumina/workshop-sdk@https://github.com/lumina-layer-studio/Lumina-Workshop-SDK/releases/download/v1.0.1/lumina-workshop-sdk-1.0.1.tgz':
+    resolution: {integrity: sha512-liqxZUwMMrKcUjlvhz7P2jkQprP25J+tAmUWmutyNA3hh111gI6GeCEsMIInm6PExhidWzn2413S80qy0hvjCw==, tarball: https://github.com/lumina-layer-studio/Lumina-Workshop-SDK/releases/download/v1.0.1/lumina-workshop-sdk-1.0.1.tgz}
+    version: 1.0.1
+    engines: {node: '>=22'}
 
   '@rolldown/pluginutils@1.0.0-beta.11':
     resolution: {integrity: sha512-L/gAA/hyCSuzTF1ftlzUSI/IKr2POHsv1Dd78GfqkR83KMNuswWD61JxGV2L7nRwBBBSDr6R1gCkdTmoN7W4ag==}
@@ -1362,7 +1363,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lumina/workshop-sdk@file:vendor/lumina-workshop-sdk-1.0.0.tgz': {}
+  '@lumina/workshop-sdk@https://github.com/lumina-layer-studio/Lumina-Workshop-SDK/releases/download/v1.0.1/lumina-workshop-sdk-1.0.1.tgz': {}
 
   '@rolldown/pluginutils@1.0.0-beta.11': {}
 

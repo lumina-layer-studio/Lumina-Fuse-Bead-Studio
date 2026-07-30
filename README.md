@@ -43,6 +43,9 @@ Lumina Studio 的官方拼豆工作台模块。它把清晰图纸或截图分析
 ## 安装与本地开发
 
 正式版本以单个 `lumina.bead-pattern-<version>.lumina-workshop` GitHub Release 资产发布，并附带同名 SHA-256 文件。Lumina 通过创意工坊安装、启用、更新、回滚和卸载这个模块。
+模块仅依赖公开的
+[`@lumina/workshop-sdk`](https://github.com/lumina-layer-studio/Lumina-Workshop-SDK)，
+并把依赖固定到带精确版本号的不可变 Release 资产。
 
 本地开发：
 
