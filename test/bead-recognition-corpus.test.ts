@@ -14,6 +14,7 @@ import type {
 import {
   makeGeneratedHardPixelChart,
   makeGeneratedRingChart,
+  makeGuidedNumberedChart,
   makeLabeledNumberedChart,
   makeNearTieHardPixelChart,
   makeNonSquareChart,
@@ -126,6 +127,10 @@ describe("generated chart recognition corpus", () => {
     });
 
     expect(result.cells[fixture.whiteBeadCell]?.kind).toBe("color");
+    expect(result.confidenceIssues).toHaveLength(1);
+    expect(
+      result.confidenceIssues.map((issue) => issue.cellIndex),
+    ).toEqual([fixture.watermarkCell]);
     expect(result.confidenceIssues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -134,6 +139,52 @@ describe("generated chart recognition corpus", () => {
         }),
       ]),
     );
+  });
+
+  it("trims numbered guide axes and keeps the complete data matrix", () => {
+    const fixture = makeGuidedNumberedChart();
+    const suggestion = suggestGrid(fixture.raster, "numbered-grid");
+
+    expect(suggestion).toMatchObject({
+      rows: 24,
+      columns: 16,
+      geometry: fixture.expectedGeometry,
+      validSquareGrid: true,
+    });
+
+    const result = recognizeBeadPattern({
+      source: fixture.raster,
+      mode: "numbered-grid",
+      rows: suggestion.rows,
+      columns: suggestion.columns,
+      geometry: suggestion.geometry,
+      emptySelection: { kind: "sample", cellIndex: 0 },
+      transparentSupportSampleCellIndex: null,
+      orientation: {
+        rotation: 0,
+        flipHorizontal: false,
+        flipVertical: false,
+      },
+    });
+
+    expect(result.cells).toHaveLength(24 * 16);
+    expect(result.cells[fixture.decorationCell]).toEqual({
+      kind: "empty",
+    });
+    expect(result.cells[fixture.paleBeadCell]?.kind).toBe("color");
+    expect(result.confidenceIssues).toEqual([]);
+  });
+
+  it("trims blank guide rows below an internal numbered axis", () => {
+    const fixture = makeGuidedNumberedChart(21, 16, 3);
+    const suggestion = suggestGrid(fixture.raster, "numbered-grid");
+
+    expect(suggestion).toMatchObject({
+      rows: 21,
+      columns: 16,
+      geometry: fixture.expectedGeometry,
+      validSquareGrid: true,
+    });
   });
 
   it("flags a controlled JPEG-like near tie for manual review", () => {

@@ -18,6 +18,8 @@ const GRID_DARK_LUMINANCE = 80;
 const HOLE_DARK_LUMINANCE = 70;
 const COLOR_CHANGE_THRESHOLD_SQUARED = 20 * 20;
 const PALETTE_MERGE_THRESHOLD_SQUARED = 12 * 12;
+const NUMBERED_LABEL_STRUCTURE_RATIO = 0.01;
+const NUMBERED_LABEL_SIDE_STRUCTURE_RATIO = 0.002;
 
 interface PixelSample {
   color: RgbColor;
@@ -31,6 +33,10 @@ interface CellSample {
   variance: number;
   dominantRatio: number;
   structureRatio: number;
+  centralStructureRatio: number;
+  centralLeftStructureRatio: number;
+  centralRightStructureRatio: number;
+  peripheralStructureRatio: number;
   centreDark: boolean;
 }
 
@@ -46,6 +52,13 @@ interface HoleComponent {
   width: number;
   height: number;
   area: number;
+}
+
+interface NumberedGuideTrim {
+  rows: number;
+  columns: number;
+  geometry: BeadGridGeometry;
+  confidence: number;
 }
 
 function fail(message: string): never {
@@ -239,9 +252,238 @@ function detectDarkLines(
   return { positions, spacing, consistency };
 }
 
+function inferredEdgePositions(
+  positions: readonly number[],
+  spacing: number,
+  dimension: number,
+): number[] {
+  if (positions.length < 2 || spacing <= 0) {
+    return [...positions];
+  }
+  const completed = [...positions];
+  const leadingGap = completed[0];
+  if (leadingGap / spacing >= 0.85 && leadingGap / spacing <= 1.15) {
+    completed.unshift(0);
+  }
+  const trailingGap = dimension - completed[completed.length - 1];
+  if (
+    trailingGap / spacing >= 0.85 &&
+    trailingGap / spacing <= 1.15
+  ) {
+    completed.push(dimension);
+  }
+  return completed;
+}
+
+function approximateCellColorMode(
+  samples: readonly CellSample[],
+): RgbColor {
+  const lowStructure = samples.filter(
+    (sample) => sample.structureRatio < 0.035,
+  );
+  const candidates =
+    lowStructure.length >= 4 ? lowStructure : [...samples];
+  const clusters: Array<{ colors: RgbColor[]; representative: RgbColor }> = [];
+  for (const sample of candidates) {
+    const existing = clusters.find(
+      (cluster) =>
+        colorDistanceSquared(cluster.representative, sample.color) <=
+        COLOR_CHANGE_THRESHOLD_SQUARED,
+    );
+    if (existing) {
+      existing.colors.push(sample.color);
+    } else {
+      clusters.push({
+        colors: [sample.color],
+        representative: sample.color,
+      });
+    }
+  }
+  const largest = clusters.sort(
+    (left, right) => right.colors.length - left.colors.length,
+  )[0];
+  if (!largest) {
+    return [0, 0, 0];
+  }
+  return [
+    Math.round(median(largest.colors.map((color) => color[0]))),
+    Math.round(median(largest.colors.map((color) => color[1]))),
+    Math.round(median(largest.colors.map((color) => color[2]))),
+  ];
+}
+
+function numberedGuideTrim(
+  source: Raster,
+  vertical: LineDetection,
+  horizontal: LineDetection,
+): NumberedGuideTrim | null {
+  const xPositions = inferredEdgePositions(
+    vertical.positions,
+    vertical.spacing,
+    source.width,
+  );
+  const yPositions = inferredEdgePositions(
+    horizontal.positions,
+    horizontal.spacing,
+    source.height,
+  );
+  const sheetColumns = xPositions.length - 1;
+  const sheetRows = yPositions.length - 1;
+  if (sheetColumns < 4 || sheetRows < 4) {
+    return null;
+  }
+
+  const samples: CellSample[][] = Array.from(
+    { length: sheetRows },
+    (_unused, row) =>
+      Array.from({ length: sheetColumns }, (_unusedColumn, column) =>
+        sampleNumberedCell(source, {
+          left: xPositions[column],
+          top: yPositions[row],
+          right: xPositions[column + 1],
+          bottom: yPositions[row + 1],
+        }),
+      ),
+  );
+  const backgroundColor = approximateCellColorMode(samples.flat());
+  const isAxisLabel = (sample: CellSample): boolean =>
+    colorDistanceSquared(sample.color, backgroundColor) <=
+      COLOR_CHANGE_THRESHOLD_SQUARED &&
+    sample.structureRatio >= 0.035 &&
+    sample.structureRatio <= 0.45;
+  const candidates: Array<{
+    columnStart: number;
+    columnEnd: number;
+    rowStart: number;
+    rowEnd: number;
+    confidence: number;
+    area: number;
+  }> = [];
+  for (
+    let rowLabelColumn = 0;
+    rowLabelColumn < sheetColumns;
+    rowLabelColumn += 1
+  ) {
+    for (let axisRow = 0; axisRow < sheetRows; axisRow += 1) {
+      const intersection = samples[axisRow][rowLabelColumn];
+      if (
+        colorDistanceSquared(intersection.color, backgroundColor) >
+          COLOR_CHANGE_THRESHOLD_SQUARED ||
+        intersection.structureRatio >= 0.035
+      ) {
+        continue;
+      }
+      for (const horizontalSide of ["left", "right"] as const) {
+        const columnStart =
+          horizontalSide === "left" ? 0 : rowLabelColumn + 1;
+        const columnEnd =
+          horizontalSide === "left"
+            ? rowLabelColumn
+            : sheetColumns;
+        const columns = columnEnd - columnStart;
+        if (columns < 4) {
+          continue;
+        }
+        const columnAxisDensity =
+          samples[axisRow]
+            .slice(columnStart, columnEnd)
+            .filter(isAxisLabel).length / columns;
+        if (columnAxisDensity < 0.8) {
+          continue;
+        }
+        for (const verticalSide of ["top", "bottom"] as const) {
+          const rowStart =
+            verticalSide === "top" ? 0 : axisRow + 1;
+          const rowEnd =
+            verticalSide === "top" ? axisRow : sheetRows;
+          const rows = rowEnd - rowStart;
+          if (rows < 4) {
+            continue;
+          }
+          let rowLabelCount = 0;
+          for (let row = rowStart; row < rowEnd; row += 1) {
+            rowLabelCount += Number(
+              isAxisLabel(samples[row][rowLabelColumn]),
+            );
+          }
+          const rowAxisDensity = rowLabelCount / rows;
+          if (rowAxisDensity < 0.8) {
+            continue;
+          }
+          candidates.push({
+            columnStart,
+            columnEnd,
+            rowStart,
+            rowEnd,
+            confidence:
+              (columnAxisDensity + rowAxisDensity) / 2,
+            area: rows * columns,
+          });
+        }
+      }
+    }
+  }
+  const axes = candidates.sort(
+    (left, right) =>
+      right.confidence - left.confidence ||
+      right.area - left.area,
+  )[0];
+  if (!axes) {
+    return null;
+  }
+  const columns = axes.columnEnd - axes.columnStart;
+  const rows = axes.rowEnd - axes.rowStart;
+  if (
+    rows < 1 ||
+    columns < 1 ||
+    rows > MAX_BEAD_GRID_SIZE ||
+    columns > MAX_BEAD_GRID_SIZE
+  ) {
+    return null;
+  }
+  const originX = xPositions[axes.columnStart];
+  const originY = yPositions[axes.rowStart];
+  const cellWidth =
+    (xPositions[axes.columnEnd] - originX) / columns;
+  const cellHeight =
+    (yPositions[axes.rowEnd] - originY) / rows;
+  return {
+    rows,
+    columns,
+    geometry: {
+      originX,
+      originY,
+      cellWidth,
+      cellHeight,
+    },
+    confidence: axes.confidence,
+  };
+}
+
 function numberedGridSuggestion(source: Raster): GridSuggestion {
   const vertical = detectDarkLines(source, "x");
   const horizontal = detectDarkLines(source, "y");
+  const guideTrim = numberedGuideTrim(source, vertical, horizontal);
+  if (guideTrim) {
+    const { cellWidth, cellHeight } = guideTrim.geometry;
+    return {
+      rows: guideTrim.rows,
+      columns: guideTrim.columns,
+      geometry: guideTrim.geometry,
+      confidence: clamp(
+        (vertical.consistency +
+          horizontal.consistency +
+          guideTrim.confidence) /
+          3,
+        0,
+        1,
+      ),
+      validSquareGrid:
+        Math.abs(cellWidth - cellHeight) /
+          Math.max(cellWidth, cellHeight) <=
+        0.08,
+    };
+  }
   const columns = clamp(vertical.positions.length - 1, 1, MAX_BEAD_GRID_SIZE);
   const rows = clamp(horizontal.positions.length - 1, 1, MAX_BEAD_GRID_SIZE);
   const cellWidth =
@@ -747,7 +989,14 @@ function localGradientSquared(
 function summarizeSamples(
   samples: readonly PixelSample[],
   colorCandidates = samples,
-): Omit<CellSample, "centreDark"> {
+): Omit<
+  CellSample,
+  | "centreDark"
+  | "centralStructureRatio"
+  | "centralLeftStructureRatio"
+  | "centralRightStructureRatio"
+  | "peripheralStructureRatio"
+> {
   const dominant = dominantColor(
     colorCandidates.length > 0 ? colorCandidates : samples,
   );
@@ -788,8 +1037,66 @@ function sampleNumberedCell(
       localGradientSquared(source, sample) <=
       COLOR_CHANGE_THRESHOLD_SQUARED,
   );
+  const summary = summarizeSamples(samples, lowGradient);
+  let minimumX = source.width - 1;
+  let maximumX = 0;
+  let minimumY = source.height - 1;
+  let maximumY = 0;
+  for (const sample of samples) {
+    minimumX = Math.min(minimumX, sample.x);
+    maximumX = Math.max(maximumX, sample.x);
+    minimumY = Math.min(minimumY, sample.y);
+    maximumY = Math.max(maximumY, sample.y);
+  }
+  const width = Math.max(1, maximumX - minimumX + 1);
+  const height = Math.max(1, maximumY - minimumY + 1);
+  let centralStructureCount = 0;
+  let centralLeftStructureCount = 0;
+  let centralRightStructureCount = 0;
+  let peripheralStructureCount = 0;
+  for (const sample of samples) {
+    const structure =
+      colorDistanceSquared(sample.color, summary.color) >
+        COLOR_CHANGE_THRESHOLD_SQUARED ||
+      sample.alpha < 128;
+    if (!structure) {
+      continue;
+    }
+    const normalizedX = (sample.x - minimumX + 0.5) / width;
+    const normalizedY = (sample.y - minimumY + 0.5) / height;
+    if (
+      normalizedX >= 0.2 &&
+      normalizedX <= 0.8 &&
+      normalizedY >= 0.2 &&
+      normalizedY <= 0.8
+    ) {
+      centralStructureCount += 1;
+      if (normalizedX <= 0.55) {
+        centralLeftStructureCount += 1;
+      }
+      if (normalizedX >= 0.45) {
+        centralRightStructureCount += 1;
+      }
+    }
+    if (
+      normalizedX < 0.08 ||
+      normalizedX > 0.92 ||
+      normalizedY < 0.08 ||
+      normalizedY > 0.92
+    ) {
+      peripheralStructureCount += 1;
+    }
+  }
+  const sampleCount = Math.max(1, samples.length);
   return {
-    ...summarizeSamples(samples, lowGradient),
+    ...summary,
+    centralStructureRatio: centralStructureCount / sampleCount,
+    centralLeftStructureRatio:
+      centralLeftStructureCount / sampleCount,
+    centralRightStructureRatio:
+      centralRightStructureCount / sampleCount,
+    peripheralStructureRatio:
+      peripheralStructureCount / sampleCount,
     centreDark: false,
   };
 }
@@ -801,6 +1108,10 @@ function sampleHardPixelCell(
   const samples = rectangularSamples(source, bounds, 0.2);
   return {
     ...summarizeSamples(samples),
+    centralStructureRatio: 0,
+    centralLeftStructureRatio: 0,
+    centralRightStructureRatio: 0,
+    peripheralStructureRatio: 0,
     centreDark: false,
   };
 }
@@ -837,7 +1148,14 @@ function sampleRingCell(
             luminance(sample.color) <= HOLE_DARK_LUMINANCE,
         ).length / centre.length
       : 0;
-  return { ...summary, centreDark: darkCentreRatio >= 0.35 };
+  return {
+    ...summary,
+    centralStructureRatio: 0,
+    centralLeftStructureRatio: 0,
+    centralRightStructureRatio: 0,
+    peripheralStructureRatio: 0,
+    centreDark: darkCentreRatio >= 0.35,
+  };
 }
 
 function sampleCell(
@@ -868,6 +1186,16 @@ function paletteIndexFor(
   }
   palette.push([...color] as RgbColor);
   return palette.length - 1;
+}
+
+function hasCenteredNumberedLabel(sample: CellSample): boolean {
+  return (
+    sample.centralStructureRatio >= NUMBERED_LABEL_STRUCTURE_RATIO &&
+    sample.centralLeftStructureRatio >=
+      NUMBERED_LABEL_SIDE_STRUCTURE_RATIO &&
+    sample.centralRightStructureRatio >=
+      NUMBERED_LABEL_SIDE_STRUCTURE_RATIO
+  );
 }
 
 function orientedPosition(
@@ -1017,6 +1345,46 @@ export function recognizeBeadPattern(
       request.geometry.cellWidth - request.geometry.cellHeight,
     ) /
     Math.max(request.geometry.cellWidth, request.geometry.cellHeight);
+  const occupiedCells = samples.map((sample, index) => {
+    const distanceFromEmpty =
+      emptyColor === null
+        ? Number.POSITIVE_INFINITY
+        : colorDistanceSquared(sample.color, emptyColor);
+    return (
+      emptyIndex === null ||
+      index === request.transparentSupportSampleCellIndex ||
+      (request.mode === "numbered-grid"
+        ? hasCenteredNumberedLabel(sample)
+        : distanceFromEmpty > COLOR_CHANGE_THRESHOLD_SQUARED ||
+          (request.mode === "ring-preview" && sample.centreDark))
+    );
+  });
+  const numberedOccupiedSamples =
+    request.mode === "numbered-grid"
+      ? samples.filter(
+          (_sample, index) =>
+            occupiedCells[index] &&
+            index !== emptyIndex &&
+            index !== request.transparentSupportSampleCellIndex,
+        )
+      : [];
+  const numberedPeripheralMedian = median(
+    numberedOccupiedSamples.map(
+      (sample) => sample.peripheralStructureRatio,
+    ),
+  );
+  const numberedPeripheralDeviation = median(
+    numberedOccupiedSamples.map((sample) =>
+      Math.abs(
+        sample.peripheralStructureRatio - numberedPeripheralMedian,
+      ),
+    ),
+  );
+  const numberedPeripheralIssueThreshold = Math.max(
+    0.055,
+    numberedPeripheralMedian +
+      Math.max(0.02, numberedPeripheralDeviation * 6),
+  );
 
   for (let index = 0; index < samples.length; index += 1) {
     const sample = samples[index];
@@ -1024,13 +1392,7 @@ export function recognizeBeadPattern(
       emptyColor === null
         ? Number.POSITIVE_INFINITY
         : colorDistanceSquared(sample.color, emptyColor);
-    const occupied =
-      emptyIndex === null ||
-      index === request.transparentSupportSampleCellIndex ||
-      distanceFromEmpty > COLOR_CHANGE_THRESHOLD_SQUARED ||
-      (request.mode === "numbered-grid" &&
-        sample.structureRatio >= 0.018) ||
-      (request.mode === "ring-preview" && sample.centreDark);
+    const occupied = occupiedCells[index];
 
     if (index === emptyIndex || !occupied) {
       cells.push({ kind: "empty" });
@@ -1052,12 +1414,21 @@ export function recognizeBeadPattern(
     }
 
     const reasons: BeadConfidenceReason[] = [];
-    if (sample.variance > 4_000) {
+    const numberedOverlayObstruction =
+      request.mode === "numbered-grid" &&
+      (sample.peripheralStructureRatio >
+        numberedPeripheralIssueThreshold ||
+        sample.structureRatio > 0.72);
+    if (
+      sample.variance > 4_000 &&
+      (request.mode !== "numbered-grid" ||
+        numberedOverlayObstruction)
+    ) {
       reasons.push("high-color-variance");
     }
     if (
       request.mode === "numbered-grid" &&
-      (sample.structureRatio > 0.08 || sample.dominantRatio < 0.55)
+      numberedOverlayObstruction
     ) {
       reasons.push("overlay-obstruction");
     }
@@ -1071,7 +1442,12 @@ export function recognizeBeadPattern(
     }
     if (
       emptyColor &&
-      distanceFromEmpty <= COLOR_CHANGE_THRESHOLD_SQUARED
+      distanceFromEmpty <= COLOR_CHANGE_THRESHOLD_SQUARED &&
+      !(
+        request.mode === "numbered-grid" &&
+        hasCenteredNumberedLabel(sample) &&
+        !numberedOverlayObstruction
+      )
     ) {
       reasons.push("occupancy-color-conflict");
     }

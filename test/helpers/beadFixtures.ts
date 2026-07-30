@@ -131,17 +131,19 @@ export function makeNumberedGridFixture({
   for (const cellIndex of watermarkCells) {
     const row = Math.floor(cellIndex / columns);
     const column = cellIndex % columns;
-    const left = column * stride + gridLineWidth + 2;
-    const top = row * stride + gridLineWidth + 2;
+    const left = column * stride + gridLineWidth + 1;
+    const top = row * stride + gridLineWidth + 1;
     for (let delta = 0; delta < stride - 5; delta += 1) {
-      setPixel(
-        raster,
-        left + delta,
-        top + delta,
-        delta % 2 === 0
-          ? [170, 20, 190, OPAQUE]
-          : [15, 15, 15, OPAQUE],
-      );
+      for (let thickness = -3; thickness <= 3; thickness += 1) {
+        setPixel(
+          raster,
+          left + delta,
+          top + delta + thickness,
+          delta % 2 === 0
+            ? [170, 20, 190, OPAQUE]
+            : [15, 15, 15, OPAQUE],
+        );
+      }
     }
   }
   return raster;
