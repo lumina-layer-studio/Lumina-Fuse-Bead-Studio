@@ -3,10 +3,15 @@ import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 
 afterEach(() => {
-  cleanup();
+  if (typeof document !== "undefined") {
+    cleanup();
+  }
 });
 
-if (typeof window.PointerEvent !== "function") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent !== "function"
+) {
   Object.defineProperty(window, "PointerEvent", {
     configurable: true,
     value: window.MouseEvent,
