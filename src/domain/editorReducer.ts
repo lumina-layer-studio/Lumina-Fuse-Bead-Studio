@@ -25,12 +25,23 @@ interface BeadIssuePatch {
   after: boolean;
 }
 
-export interface BeadEditHistoryEntry {
+export interface BeadPatchHistoryEntry {
+  kind: "patch";
   cellPatches: BeadCellPatch[];
   issuePatches: BeadIssuePatch[];
   beforeUpdatedAt: string;
   afterUpdatedAt: string;
 }
+
+export interface BeadProjectHistoryEntry {
+  kind: "project";
+  beforeProject: BeadProject;
+  afterProject: BeadProject;
+}
+
+export type BeadEditHistoryEntry =
+  | BeadPatchHistoryEntry
+  | BeadProjectHistoryEntry;
 
 export interface BeadEditorState {
   present: BeadProject;
@@ -80,6 +91,7 @@ export type BeadEditorAction =
       printMapping: BeadPrintMapping | null;
       updatedAt?: string;
     }
+  | { type: "replace-project"; project: BeadProject }
   | { type: "undo" }
   | { type: "redo" };
 
@@ -210,6 +222,17 @@ function applyHistoryEntry(
   entry: BeadEditHistoryEntry,
   direction: "forward" | "backward",
 ): BeadProject {
+  if (entry.kind === "project") {
+    const target =
+      direction === "forward"
+        ? entry.afterProject
+        : entry.beforeProject;
+    return validateBeadProject({
+      ...target,
+      updatedAt: project.updatedAt,
+    });
+  }
+
   const cells = project.cells.slice();
   for (const patch of entry.cellPatches) {
     cells[patch.index] =
@@ -406,6 +429,29 @@ export function beadEditorReducer(
       }),
     };
   }
+  if (action.type === "replace-project") {
+    const replacement = validateBeadProject(action.project);
+    const nextState = commitHistoryEntry(state, {
+      kind: "project",
+      beforeProject: state.present,
+      afterProject: replacement,
+    });
+    const selectedIssueIndex =
+      nextState.present.confidenceIssues.findIndex(
+        (issue) => !issue.resolved,
+      );
+    return {
+      ...nextState,
+      activePaletteIndex: 0,
+      selectedCellIndex:
+        selectedIssueIndex >= 0
+          ? nextState.present.confidenceIssues[selectedIssueIndex]
+              .cellIndex
+          : null,
+      selectedIssueIndex:
+        selectedIssueIndex >= 0 ? selectedIssueIndex : null,
+    };
+  }
   if (action.type === "select-cell") {
     if (
       action.cellIndex !== null &&
@@ -468,6 +514,7 @@ export function beadEditorReducer(
       return state;
     }
     return commitHistoryEntry(state, {
+      kind: "patch",
       cellPatches: [],
       issuePatches: [
         {
@@ -505,6 +552,7 @@ export function beadEditorReducer(
   );
   return {
     ...commitHistoryEntry(state, {
+      kind: "patch",
       cellPatches,
       issuePatches,
       beforeUpdatedAt: state.present.updatedAt,
