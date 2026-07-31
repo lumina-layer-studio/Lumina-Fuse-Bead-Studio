@@ -1180,23 +1180,128 @@ describe("BeadWorkshopModule", () => {
 
       expect(createEngine).not.toHaveBeenCalled();
       expect(classify).not.toHaveBeenCalled();
-      expect(
-        progress.mock.calls
-          .slice(progressCallsAfterCleanup)
-          .map(([payload]) => payload)
-          .filter((payload) => payload !== null),
-      ).toEqual([]);
-      expect(
-        error.mock.calls
-          .slice(errorCallsAfterCleanup)
-          .map(([payload]) => payload)
-          .filter((payload) => payload !== null),
-      ).toEqual([]);
+      expect(progress).toHaveBeenCalledTimes(
+        progressCallsAfterCleanup,
+      );
+      expect(error).toHaveBeenCalledTimes(errorCallsAfterCleanup);
 
       client.close();
       harness.close();
     },
   );
+
+  it("keeps a pending image pick current across a locale rerender", async () => {
+    const pendingPick = deferred<
+      Awaited<ReturnType<WorkshopClient["image"]["pick"]>>
+    >();
+    const harness = createSdkHarness();
+    const client = await harness.connect();
+    vi.spyOn(client.image, "pick").mockReturnValue(
+      pendingPick.promise,
+    );
+    const engine = new FakeEngine();
+    const classify = vi.spyOn(engine, "classify");
+    const createEngine = vi.fn(() => engine);
+    const module = (locale: "zh-CN" | "en-US") => (
+      <BeadWorkshopModule
+        client={client}
+        locale={locale}
+        createEngine={createEngine}
+        imageCodec={codec}
+        autosaveDelayMs={0}
+      />
+    );
+    const view = render(module("zh-CN"));
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "选择拼豆图纸",
+      }),
+    );
+    view.rerender(module("en-US"));
+    await act(async () => {
+      pendingPick.resolve({
+        name: "locale-safe.png",
+        mimeType: "image/png",
+        bytes: new Uint8Array([1, 2, 3]).buffer,
+        raster: sourceRaster(),
+      });
+      await pendingPick.promise;
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Calibrate pattern",
+      }),
+    ).toBeInTheDocument();
+    expect(createEngine).toHaveBeenCalledTimes(1);
+    expect(classify).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    client.close();
+    harness.close();
+  });
+
+  it("keeps an active classification alive across locale rerenders and disposes only on unmount", async () => {
+    const raster = sourceRaster();
+    const classification = deferred<PatternClassification>();
+    const harness = createSdkHarness({
+      pickedImage: {
+        name: "active.png",
+        mimeType: "image/png",
+        bytes: new Uint8Array([1, 2, 3]).buffer,
+        raster,
+      },
+    });
+    const client = await harness.connect();
+    const progress = vi.spyOn(client.status, "progress");
+    const engine = new FakeEngine({
+      classifications: [classification.promise],
+    });
+    const module = (locale: "zh-CN" | "en-US") => (
+      <BeadWorkshopModule
+        client={client}
+        locale={locale}
+        createEngine={() => engine}
+        imageCodec={codec}
+        autosaveDelayMs={0}
+      />
+    );
+    const view = render(module("zh-CN"));
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "选择拼豆图纸",
+      }),
+    );
+    expect(
+      await screen.findByText("正在分析图纸类型…"),
+    ).toBeInTheDocument();
+    view.rerender(module("en-US"));
+
+    expect(engine.dispose).not.toHaveBeenCalled();
+    expect(engine.cancel).not.toHaveBeenCalled();
+    expect(progress.mock.calls.at(-1)?.[0]).toEqual({
+      phase: "classify-pattern",
+      completed: 0,
+      total: 1,
+    });
+    await act(async () => {
+      classification.resolve(DEFAULT_CLASSIFICATION);
+      await classification.promise;
+    });
+    expect(
+      await screen.findByText(
+        "Suggested: Hard-edged pixel chart · 94% confidence",
+      ),
+    ).toBeInTheDocument();
+
+    view.unmount();
+    expect(engine.dispose).toHaveBeenCalledTimes(1);
+    client.close();
+    harness.close();
+  });
 
   it("resumes a valid latest project and renders it before ready", async () => {
     const project = createBeadProject({

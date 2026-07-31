@@ -287,6 +287,7 @@ export function BeadWorkshopModule({
   const colorLibraryFlightRef =
     useRef<Promise<WorkshopColorLibrary | null> | null>(null);
   const lifecycleEpochRef = useRef(0);
+  const pickRequestRef = useRef(0);
   const processingEpochRef = useRef(0);
   const activeProcessingRef =
     useRef<ActiveProcessingTask | null>(null);
@@ -378,6 +379,11 @@ export function BeadWorkshopModule({
     },
     [client.status, t],
   );
+  const reportProcessingErrorRef = useRef(reportProcessingError);
+
+  useEffect(() => {
+    reportProcessingErrorRef.current = reportProcessingError;
+  }, [reportProcessingError]);
 
   const classifyRaster = useCallback(
     async (source: Raster, applySuggestion: boolean) => {
@@ -532,7 +538,7 @@ export function BeadWorkshopModule({
         if (!cancelled) setInitialized(true);
       } catch {
         if (cancelled) return;
-        reportProcessingError("project-restore-failed");
+        reportProcessingErrorRef.current("project-restore-failed");
         setStage("upload");
         setInitialized(true);
       }
@@ -541,7 +547,7 @@ export function BeadWorkshopModule({
     return () => {
       cancelled = true;
     };
-  }, [client, imageCodec, reportProcessingError]);
+  }, [client, imageCodec]);
 
   useEffect(() => {
     if (!committedCalibration || !originalRaster) return;
@@ -570,16 +576,32 @@ export function BeadWorkshopModule({
     persistProject,
   ]);
 
+  const unmountCleanupRef = useRef({
+    status: client.status,
+    persistProject,
+  });
+
+  useEffect(() => {
+    unmountCleanupRef.current = {
+      status: client.status,
+      persistProject,
+    };
+  }, [client.status, persistProject]);
+
   useEffect(
     () => () => {
       lifecycleEpochRef.current += 1;
       invalidateProcessing();
-      ignoreFailure(client.status.progress(null));
-      engineRef.current?.dispose();
+      const { status, persistProject: persistLatestProject } =
+        unmountCleanupRef.current;
+      ignoreFailure(status.progress(null));
+      const engine = engineRef.current;
+      engineRef.current = null;
+      engine?.dispose();
       const latest = latestProjectRef.current;
-      if (latest) void persistProject(latest);
+      if (latest) void persistLatestProject(latest);
     },
-    [client.status, invalidateProcessing, persistProject],
+    [invalidateProcessing],
   );
 
   useEffect(() => {
@@ -691,6 +713,11 @@ export function BeadWorkshopModule({
   const handlePickImage = async () => {
     invalidateProcessing();
     const lifecycleEpoch = lifecycleEpochRef.current;
+    const pickRequest = pickRequestRef.current + 1;
+    pickRequestRef.current = pickRequest;
+    const isCurrentPickRequest = () =>
+      lifecycleEpochRef.current === lifecycleEpoch &&
+      pickRequestRef.current === pickRequest;
     setProcessingPhase("idle");
     setIsPicking(true);
     clearVisibleError();
@@ -704,7 +731,7 @@ export function BeadWorkshopModule({
     );
     try {
       const picked = await pickBeadSource(client);
-      if (lifecycleEpochRef.current !== lifecycleEpoch) return;
+      if (!isCurrentPickRequest()) return;
       if (picked) {
         setIsPicking(false);
         await preparePickedImage(picked);
@@ -712,7 +739,7 @@ export function BeadWorkshopModule({
         ignoreFailure(client.status.progress(null));
       }
     } catch {
-      if (lifecycleEpochRef.current !== lifecycleEpoch) return;
+      if (!isCurrentPickRequest()) return;
       const message = t("workshop.bead.pickerError");
       setVisibleError(message);
       ignoreFailure(
@@ -724,7 +751,7 @@ export function BeadWorkshopModule({
       );
       ignoreFailure(client.status.progress(null));
     } finally {
-      if (lifecycleEpochRef.current === lifecycleEpoch) {
+      if (isCurrentPickRequest()) {
         setIsPicking(false);
       }
     }
