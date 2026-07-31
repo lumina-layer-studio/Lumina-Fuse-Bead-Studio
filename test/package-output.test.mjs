@@ -7,7 +7,7 @@ import test from "node:test";
 import { unzipSync } from "fflate";
 
 const assetName =
-  "lumina.bead-pattern-1.0.1.lumina-workshop";
+  "lumina.bead-pattern-1.0.2.lumina-workshop";
 const assetPath = `artifacts/${assetName}`;
 const checksumPath = `${assetPath}.sha256`;
 

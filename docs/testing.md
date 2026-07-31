@@ -24,8 +24,8 @@ The benchmark must stay within `benchmarks/ci-budget.json`. It verifies 52×52 p
 `pnpm package` produces:
 
 ```text
-artifacts/lumina.bead-pattern-1.0.1.lumina-workshop
-artifacts/lumina.bead-pattern-1.0.1.lumina-workshop.sha256
+artifacts/lumina.bead-pattern-1.0.2.lumina-workshop
+artifacts/lumina.bead-pattern-1.0.2.lumina-workshop.sha256
 ```
 
 The archive is reproducible byte for byte and contains only:
@@ -42,7 +42,7 @@ Validate it against the Lumina repository without executing module code:
 
 ```bash
 python -m core.workshop.package_validator \
-  /absolute/path/to/artifacts/lumina.bead-pattern-1.0.1.lumina-workshop
+  /absolute/path/to/artifacts/lumina.bead-pattern-1.0.2.lumina-workshop
 ```
 
 ## Real host acceptance
