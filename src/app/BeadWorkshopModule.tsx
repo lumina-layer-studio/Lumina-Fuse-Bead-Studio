@@ -290,6 +290,7 @@ export function BeadWorkshopModule({
   const activeProcessingRef =
     useRef<ActiveProcessingTask | null>(null);
   const editorProject = editorState?.present ?? null;
+  const committedCalibration = editorProject?.calibration ?? null;
   const colorMapping = useMemo(
     () =>
       editorProject
@@ -540,6 +541,19 @@ export function BeadWorkshopModule({
   }, [client, imageCodec, reportProcessingError]);
 
   useEffect(() => {
+    if (!committedCalibration || !originalRaster) return;
+    const committedCrop = committedCalibration.crop
+      ? { ...committedCalibration.crop }
+      : null;
+    setCrop(committedCrop);
+    setWorkingRaster(
+      committedCrop
+        ? cropRaster(originalRaster, committedCrop)
+        : originalRaster,
+    );
+  }, [committedCalibration, originalRaster]);
+
+  useEffect(() => {
     latestProjectRef.current = editorProject;
     if (!editorProject || !initialized) return undefined;
     const timer = window.setTimeout(() => {
@@ -758,8 +772,6 @@ export function BeadWorkshopModule({
     const committedRaster = committedCrop
       ? cropRaster(originalRaster, committedCrop)
       : originalRaster;
-    setCrop(committedCrop);
-    setWorkingRaster(committedRaster);
     setRecalibrationSession({
       workingRaster: committedRaster,
       crop: committedCrop,
@@ -879,8 +891,6 @@ export function BeadWorkshopModule({
       } else {
         setEditorState(createBeadEditorState(project));
       }
-      setWorkingRaster(source);
-      setCrop(activeCrop);
       setRecalibrationSession(null);
       setCalibrationDraft(null);
       setClassification(null);

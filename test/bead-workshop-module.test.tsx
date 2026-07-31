@@ -43,6 +43,24 @@ function sourceRaster(width = 4, height = 4): Raster {
   return { width, height, data };
 }
 
+function canvasContextStub(): CanvasRenderingContext2D {
+  return {
+    beginPath: vi.fn(),
+    clearRect: vi.fn(),
+    createImageData: vi.fn((width: number, height: number) => ({
+      data: new Uint8ClampedArray(width * height * 4),
+    })),
+    fillRect: vi.fn(),
+    lineTo: vi.fn(),
+    moveTo: vi.fn(),
+    putImageData: vi.fn(),
+    restore: vi.fn(),
+    save: vi.fn(),
+    stroke: vi.fn(),
+    strokeRect: vi.fn(),
+  } as unknown as CanvasRenderingContext2D;
+}
+
 const DEFAULT_CLASSIFICATION: PatternClassification = {
   mode: "hard-pixel",
   confidence: 0.94,
@@ -817,6 +835,63 @@ describe("BeadWorkshopModule", () => {
           index === 0 || timestamp >= saveTimes[index - 1],
       ),
     ).toBe(true);
+    client.close();
+    harness.close();
+  });
+
+  it("keeps source raster and crop aligned with recalibration checkpoints through undo and redo", async () => {
+    vi.mocked(
+      HTMLCanvasElement.prototype.getContext,
+    ).mockReturnValue(canvasContextStub());
+    const raster = sourceRaster(30, 20);
+    const project = projectWithSource();
+    const engine = new FakeEngine({
+      recognitions: [recognitionResult(2, 1)],
+    });
+    const { client, harness } = await startRestoredEditor(
+      project,
+      engine,
+      raster,
+    );
+
+    await returnToCalibration();
+    await openCropAndSet({ x: 0, y: 0, width: 10, height: 20 });
+    setGridDimensions(2, 1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "图中没有空位" }),
+    );
+    await recognizeAndOpenEditor();
+
+    fireEvent.click(screen.getByRole("button", { name: "原图" }));
+    const sourceCanvas = screen.getByRole("img", {
+      name: "拼豆图纸原图",
+    }) as HTMLCanvasElement;
+    await waitFor(() => {
+      expect(sourceCanvas.width).toBe(10);
+      expect(sourceCanvas.height).toBe(20);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await waitFor(() => {
+      expect(sourceCanvas.width).toBe(20);
+      expect(sourceCanvas.height).toBe(20);
+    });
+    await returnToCalibration();
+    await expectCrop({ x: 5, y: 0, width: 20, height: 20 });
+
+    await returnToEditor();
+    fireEvent.click(screen.getByRole("button", { name: "重做" }));
+    fireEvent.click(screen.getByRole("button", { name: "原图" }));
+    const redoneSourceCanvas = screen.getByRole("img", {
+      name: "拼豆图纸原图",
+    }) as HTMLCanvasElement;
+    await waitFor(() => {
+      expect(redoneSourceCanvas.width).toBe(10);
+      expect(redoneSourceCanvas.height).toBe(20);
+    });
+    await returnToCalibration();
+    await expectCrop({ x: 0, y: 0, width: 10, height: 20 });
+
     client.close();
     harness.close();
   });
