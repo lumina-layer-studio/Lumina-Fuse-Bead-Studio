@@ -32,7 +32,9 @@ const zhCN = {
   "workshop.bead.columns": "列数",
   "workshop.bead.originX": "网格原点 X",
   "workshop.bead.originY": "网格原点 Y",
-  "workshop.bead.gridInvalid": "当前网格不是正方形，请调整行列或原点。",
+  "workshop.bead.gridInvalid":
+    "当前网格不是正方形。可自动收紧右侧或下侧边界，也可手动调整行列、原点与裁剪。",
+  "workshop.bead.fitSquareGrid": "自动收紧到正方形网格",
   "workshop.bead.emptyDecisionRequired":
     "请先选择一个空位样本，或明确图中没有空位。",
   "workshop.bead.pickEmpty": "选择一个空位",
@@ -174,7 +176,8 @@ const enUS = {
   "workshop.bead.originX": "Grid origin X",
   "workshop.bead.originY": "Grid origin Y",
   "workshop.bead.gridInvalid":
-    "The current grid is not square. Adjust rows, columns, or the origin.",
+    "The grid is not square. Fit the right or bottom edge automatically, or adjust rows, columns, the origin, and crop.",
+  "workshop.bead.fitSquareGrid": "Fit to square grid",
   "workshop.bead.emptyDecisionRequired":
     "Choose an empty-cell sample or explicitly confirm that the pattern has no empty cells.",
   "workshop.bead.pickEmpty": "Choose an empty cell",

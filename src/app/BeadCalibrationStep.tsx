@@ -43,6 +43,7 @@ interface BeadCalibrationStepProps {
   onChange(next: BeadCalibrationDraft): void;
   onRecognize(): void;
   onOpenCrop(): void;
+  onFitSquareGrid?(): void;
   onReturnToEditor?(): void;
   canCrop: boolean;
 }
@@ -85,6 +86,7 @@ export function BeadCalibrationStep({
   onChange,
   onRecognize,
   onOpenCrop,
+  onFitSquareGrid,
   onReturnToEditor,
   canCrop,
 }: BeadCalibrationStepProps) {
@@ -422,9 +424,20 @@ export function BeadCalibrationStep({
           </div>
 
           {!validGrid ? (
-            <StatusBanner tone="warning">
-              {t("workshop.bead.gridInvalid")}
-            </StatusBanner>
+            <>
+              <StatusBanner tone="warning">
+                {t("workshop.bead.gridInvalid")}
+              </StatusBanner>
+              {onFitSquareGrid ? (
+                <Button
+                  label={t("workshop.bead.fitSquareGrid")}
+                  variant="secondary"
+                  disabled={busy || classificationBusy}
+                  onClick={onFitSquareGrid}
+                  className="button--full"
+                />
+              ) : null}
+            </>
           ) : null}
           {validGrid && draft.emptySelection === null ? (
             <StatusBanner tone="warning">

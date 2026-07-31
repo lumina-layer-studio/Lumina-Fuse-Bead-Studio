@@ -6,7 +6,11 @@ import {
   validateBeadProject,
 } from "../domain/project";
 import type { BeadRenderResult } from "../domain/renderer";
-import type { BeadProject } from "../domain/types";
+import {
+  BEAD_MODULE_ID,
+  BEAD_MODULE_VERSION,
+  type BeadProject,
+} from "../domain/types";
 import type { BeadImageCodec } from "./imageCodec";
 
 const MAX_HANDOFF_PNG_BYTES = 64 * 1024 * 1024;
@@ -79,10 +83,15 @@ export async function prepareBeadHandoff(
   const pngBytes = await imageCodec.encodePng(raster);
   assertPng(pngBytes);
   const size = calculatePhysicalSize(project, project.beadPitchMm);
+  const recipeSource = {
+    ...createBeadRecipeSource(project),
+    moduleId: BEAD_MODULE_ID,
+    moduleVersion: BEAD_MODULE_VERSION,
+  };
   return {
     base: {
-      moduleId: project.moduleId,
-      moduleVersion: project.moduleVersion,
+      moduleId: BEAD_MODULE_ID,
+      moduleVersion: BEAD_MODULE_VERSION,
       projectId: project.projectId,
       pixelWidth: raster.width,
       pixelHeight: raster.height,
@@ -96,7 +105,7 @@ export async function prepareBeadHandoff(
         pitchMm: project.beadPitchMm,
       },
       colorLibraryId,
-      recipeSource: structuredClone(createBeadRecipeSource(project)),
+      recipeSource: structuredClone(recipeSource),
     },
     pngBytes: pngBytes.slice(0),
   };

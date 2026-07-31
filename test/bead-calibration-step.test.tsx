@@ -49,6 +49,7 @@ function initialDraft(
 function Harness({
   draft = initialDraft(),
   onRecognize = vi.fn(),
+  onFitSquareGrid = vi.fn(),
   onReturnToEditor,
   busy = false,
   classificationBusy = false,
@@ -56,6 +57,7 @@ function Harness({
 }: {
   draft?: BeadCalibrationDraft;
   onRecognize?: () => void;
+  onFitSquareGrid?: () => void;
   onReturnToEditor?: () => void;
   busy?: boolean;
   classificationBusy?: boolean;
@@ -86,6 +88,7 @@ function Harness({
       onChange={setValue}
       onRecognize={onRecognize}
       onOpenCrop={vi.fn()}
+      onFitSquareGrid={onFitSquareGrid}
       onReturnToEditor={onReturnToEditor}
       canCrop
     />
@@ -156,8 +159,10 @@ describe("BeadCalibrationStep", () => {
   });
 
   it("updates orientation and rejects a visibly non-square grid", () => {
+    const onFitSquareGrid = vi.fn();
     render(
       <Harness
+        onFitSquareGrid={onFitSquareGrid}
         draft={initialDraft({
           geometry: {
             originX: 0,
@@ -170,8 +175,16 @@ describe("BeadCalibrationStep", () => {
     );
 
     expect(
-      screen.getByText("当前网格不是正方形，请调整行列或原点。"),
+      screen.getByText(
+        "当前网格不是正方形。可自动收紧右侧或下侧边界，也可手动调整行列、原点与裁剪。",
+      ),
     ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "自动收紧到正方形网格",
+      }),
+    );
+    expect(onFitSquareGrid).toHaveBeenCalledTimes(1);
     expect(
       screen.getByRole("button", { name: "识别拼豆矩阵" }),
     ).toBeDisabled();

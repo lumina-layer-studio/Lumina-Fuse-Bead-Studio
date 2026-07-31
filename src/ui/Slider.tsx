@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 interface SliderProps {
   label: string;
   value: number;
@@ -21,17 +23,23 @@ export default function Slider({
   tooltip,
   onChange,
 }: SliderProps) {
+  const labelId = useId();
   const progress =
     max === min ? 0 : ((value - min) / (max - min)) * 100;
   return (
-    <label className="slider" title={tooltip}>
+    <div className="slider" title={tooltip}>
       <span className="slider__header">
-        <span className="field-label">{label}</span>
-        <output>{value}{unit}</output>
+        <span id={labelId} className="field-label">
+          {label}
+        </span>
+        <output aria-live="polite" aria-atomic="true">
+          {value}
+          {unit}
+        </output>
       </span>
       <input
         type="range"
-        aria-label={label}
+        aria-labelledby={labelId}
         min={min}
         max={max}
         step={step}
@@ -40,6 +48,6 @@ export default function Slider({
         style={{ "--slider-progress": `${progress}%` } as React.CSSProperties}
         onChange={(event) => onChange(Number(event.target.value))}
       />
-    </label>
+    </div>
   );
 }

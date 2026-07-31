@@ -31,11 +31,24 @@ export interface PickedBeadSource {
 }
 
 const sourceBytes = new WeakMap<Blob, Promise<ArrayBuffer>>();
+const resolvedSourceBytes = new WeakMap<Blob, ArrayBuffer>();
+
+function rememberSourceBytes(blob: Blob, bytes: ArrayBuffer): void {
+  const snapshot = bytes.slice(0);
+  resolvedSourceBytes.set(blob, snapshot);
+  sourceBytes.set(blob, Promise.resolve(snapshot));
+}
 
 function bytesForBlob(blob: Blob): Promise<ArrayBuffer> {
+  const resolved = resolvedSourceBytes.get(blob);
+  if (resolved) return Promise.resolve(resolved);
   const existing = sourceBytes.get(blob);
   if (existing) return existing;
-  const pending = blob.arrayBuffer();
+  const pending = blob.arrayBuffer().then((bytes) => {
+    const snapshot = bytes.slice(0);
+    resolvedSourceBytes.set(blob, snapshot);
+    return snapshot;
+  });
   sourceBytes.set(blob, pending);
   return pending;
 }
@@ -45,7 +58,7 @@ function sourceFromPickedImage(
 ): BeadProjectSource {
   const bytes = picked.bytes.slice(0);
   const blob = new Blob([bytes], { type: picked.mimeType });
-  sourceBytes.set(blob, Promise.resolve(bytes.slice(0)));
+  rememberSourceBytes(blob, bytes);
   return {
     fileName: picked.name,
     mimeType: picked.mimeType,
@@ -70,10 +83,14 @@ export async function pickBeadSource(
   };
 }
 
-async function projectForStorage(
+function projectForStorageWithBytes(
   project: BeadProject,
-): Promise<StoredBeadProject> {
+  bytes: ArrayBuffer | null,
+): StoredBeadProject {
   const source = project.source;
+  if (source && bytes === null) {
+    throw new Error("Source bytes are not cached.");
+  }
   const { printMapping, ...projectWithoutPrintMapping } = project;
   return {
     ...projectWithoutPrintMapping,
@@ -96,7 +113,7 @@ async function projectForStorage(
       ? {
           fileName: source.fileName,
           mimeType: source.mimeType,
-          bytes: (await bytesForBlob(source.blob)).slice(0),
+          bytes: bytes!.slice(0),
           pixelWidth: source.pixelWidth,
           pixelHeight: source.pixelHeight,
         }
@@ -116,6 +133,28 @@ async function projectForStorage(
   } as StoredBeadProject;
 }
 
+async function projectForStorage(
+  project: BeadProject,
+): Promise<StoredBeadProject> {
+  const bytes = project.source
+    ? await bytesForBlob(project.source.blob)
+    : null;
+  return projectForStorageWithBytes(project, bytes);
+}
+
+function projectRecord(
+  project: BeadProject,
+  stored: StoredBeadProject,
+): WorkshopProjectRecord<StoredBeadProject> {
+  return {
+    projectId: project.projectId,
+    schemaVersion: project.schemaVersion,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    project: stored,
+  };
+}
+
 function projectFromStorage(
   project: StoredBeadProject,
 ): BeadProject {
@@ -130,10 +169,7 @@ function projectFromStorage(
       }
     : null;
   if (source && restoredSource) {
-    sourceBytes.set(
-      restoredSource.blob,
-      Promise.resolve(source.bytes.slice(0)),
-    );
+    rememberSourceBytes(restoredSource.blob, source.bytes);
   }
   return validateBeadProject({
     ...project,
@@ -146,14 +182,24 @@ export async function saveBeadProject(
   project: BeadProject,
 ): Promise<void> {
   const stored = await projectForStorage(project);
-  const record: WorkshopProjectRecord<StoredBeadProject> = {
-    projectId: project.projectId,
-    schemaVersion: project.schemaVersion,
-    createdAt: project.createdAt,
-    updatedAt: project.updatedAt,
-    project: stored,
-  };
-  await client.projects.save(record);
+  await client.projects.save(projectRecord(project, stored));
+}
+
+export function queueCachedBeadProjectSave(
+  client: WorkshopClient,
+  project: BeadProject,
+): Promise<void> | null {
+  const source = project.source;
+  const bytes = source
+    ? resolvedSourceBytes.get(source.blob)
+    : null;
+  if (source && !bytes) return null;
+  return client.projects.save(
+    projectRecord(
+      project,
+      projectForStorageWithBytes(project, bytes ?? null),
+    ),
+  );
 }
 
 export async function latestBeadProject(

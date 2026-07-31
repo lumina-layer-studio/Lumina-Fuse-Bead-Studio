@@ -404,9 +404,11 @@ async function returnToEditor() {
 }
 
 async function recognizeAndOpenEditor() {
-  fireEvent.click(
-    screen.getByRole("button", { name: "识别拼豆矩阵" }),
-  );
+  const recognizeButton = screen.getByRole("button", {
+    name: "识别拼豆矩阵",
+  });
+  await waitFor(() => expect(recognizeButton).toBeEnabled());
+  fireEvent.click(recognizeButton);
   await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
 }
 
@@ -650,6 +652,170 @@ describe("BeadWorkshopModule", () => {
     harness.close();
   });
 
+  it("keeps calibrated grid intent when the crop is refined", async () => {
+    const raster = sourceRaster(30, 20);
+    const project = projectWithSource({
+      calibration: {
+        inputMode: "numbered-grid",
+        crop: { x: 5, y: 0, width: 20, height: 20 },
+        origin: { x: 0, y: 0 },
+        orientation: {
+          rotation: 180,
+          flipHorizontal: true,
+          flipVertical: false,
+        },
+        emptySelection: { kind: "sample", cellIndex: 0 },
+        transparentSupportSampleCellIndex: 1,
+      },
+    });
+    const { client, harness } = await startRestoredEditor(
+      project,
+      new FakeEngine(),
+      raster,
+    );
+
+    await returnToCalibration();
+    await openCropAndSet({ x: 3, y: 0, width: 22, height: 20 });
+
+    expect(
+      screen.getByRole("spinbutton", { name: "行数" }),
+    ).toHaveValue(2);
+    expect(
+      screen.getByRole("spinbutton", { name: "列数" }),
+    ).toHaveValue(2);
+    expect(
+      screen.getByRole("spinbutton", { name: "网格原点 X" }),
+    ).toHaveValue(2);
+    expect(
+      screen.getByRole("spinbutton", { name: "网格原点 Y" }),
+    ).toHaveValue(0);
+    expect(
+      screen.getByRole("button", { name: "旋转 180°" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "水平翻转" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("空位样本：第 1 格")).toBeInTheDocument();
+    expect(
+      screen.getByText("透明支撑样本：第 2 格"),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "识别拼豆矩阵" }),
+      ).toBeEnabled();
+    });
+
+    client.close();
+    harness.close();
+  });
+
+  it("reanalyzes a refined crop without overwriting confirmed calibration", async () => {
+    const raster = sourceRaster(30, 20);
+    const project = projectWithSource({
+      calibration: {
+        inputMode: "numbered-grid",
+        crop: { x: 5, y: 0, width: 20, height: 20 },
+        origin: { x: 0, y: 0 },
+        orientation: {
+          rotation: 0,
+          flipHorizontal: false,
+          flipVertical: false,
+        },
+        emptySelection: { kind: "none" },
+        transparentSupportSampleCellIndex: null,
+      },
+    });
+    const engine = new FakeEngine({
+      classifications: [
+        DEFAULT_CLASSIFICATION,
+        {
+          mode: "ring-preview",
+          confidence: 0.88,
+          scores: {
+            "numbered-grid": 0.12,
+            "hard-pixel": 0.18,
+            "ring-preview": 0.88,
+          },
+        },
+      ],
+    });
+    const { client, harness } = await startRestoredEditor(
+      project,
+      engine,
+      raster,
+    );
+
+    await returnToCalibration();
+    await screen.findByText("建议：硬边像素图 · 置信度 94%");
+    await openCropAndSet({ x: 3, y: 0, width: 22, height: 20 });
+
+    expect(
+      await screen.findByText("建议：圆豆俯视图 · 置信度 88%"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "图纸类型" }),
+    ).toHaveValue("numbered-grid");
+    expect(
+      screen.getByRole("spinbutton", { name: "行数" }),
+    ).toHaveValue(2);
+    expect(
+      screen.getByRole("spinbutton", { name: "列数" }),
+    ).toHaveValue(2);
+
+    client.close();
+    harness.close();
+  });
+
+  it("visibly tightens a non-square calibration to the confirmed grid", async () => {
+    const raster = sourceRaster(30, 20);
+    const project = projectWithSource({
+      calibration: {
+        inputMode: "numbered-grid",
+        crop: { x: 5, y: 0, width: 20, height: 16 },
+        origin: { x: 0, y: 0 },
+        orientation: {
+          rotation: 0,
+          flipHorizontal: false,
+          flipVertical: false,
+        },
+        emptySelection: { kind: "none" },
+        transparentSupportSampleCellIndex: null,
+      },
+    });
+    const { client, harness } = await startRestoredEditor(
+      project,
+      new FakeEngine(),
+      raster,
+    );
+
+    await returnToCalibration();
+    expect(
+      screen.getByText(
+        "当前网格不是正方形。可自动收紧右侧或下侧边界，也可手动调整行列、原点与裁剪。",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "自动收紧到正方形网格",
+      }),
+    );
+
+    expect(
+      screen.queryByText(
+        "当前网格不是正方形。可自动收紧右侧或下侧边界，也可手动调整行列、原点与裁剪。",
+      ),
+    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "识别拼豆矩阵" }),
+      ).toBeEnabled();
+    });
+    await expectCrop({ x: 5, y: 0, width: 16, height: 16 });
+
+    client.close();
+    harness.close();
+  });
+
   it("discards staged crop and grid edits when returning to the editor", async () => {
     const raster = sourceRaster(30, 20);
     const engine = new FakeEngine({
@@ -706,6 +872,10 @@ describe("BeadWorkshopModule", () => {
     await returnToCalibration();
     await openCropAndSet({ x: 0, y: 0, width: 10, height: 20 });
     setGridDimensions(2, 1);
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "网格原点 X" }),
+      { target: { value: 0 } },
+    );
     fireEvent.click(
       screen.getByRole("button", { name: "图中没有空位" }),
     );
@@ -862,6 +1032,10 @@ describe("BeadWorkshopModule", () => {
       screen.getByRole("button", { name: "使用原图" }),
     );
     setGridDimensions(2, 3);
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "网格原点 X" }),
+      { target: { value: 0 } },
+    );
     fireEvent.click(
       screen.getByRole("button", { name: "图中没有空位" }),
     );
@@ -1123,6 +1297,135 @@ describe("BeadWorkshopModule", () => {
       await screen.findByRole("heading", { name: "校准图纸" }),
     ).toBeInTheDocument();
     expect(harness.payloads("status.error").at(-1)).toBeNull();
+
+    client.close();
+    harness.close();
+  });
+
+  it("clears a transient autosave error after the next save succeeds", async () => {
+    const project = projectWithSource();
+    const raster = sourceRaster(30, 20);
+    const harness = createSdkHarness({
+      latestProject: storedProjectRecord(project),
+    });
+    const client = await harness.connect();
+    const save = vi
+      .spyOn(client.projects, "save")
+      .mockRejectedValueOnce(new Error("temporary save failure"))
+      .mockResolvedValue(undefined);
+    mountWorkshop(client, new FakeEngine(), imageCodecFor(raster));
+
+    await screen.findByRole("heading", {
+      name: "编辑拼豆矩阵",
+    });
+    expect(
+      await screen.findByText(
+        "自动保存暂时失败。当前页面中的编辑不会丢失。",
+      ),
+    ).toBeInTheDocument();
+    expect(harness.payloads("status.error")).toContainEqual({
+      code: "project-save-failed",
+      message: "自动保存暂时失败。当前页面中的编辑不会丢失。",
+      retryable: true,
+    });
+
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "单豆节距" }),
+      { target: { value: "3.2" } },
+    );
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledTimes(2);
+      expect(
+        screen.queryByText(
+          "自动保存暂时失败。当前页面中的编辑不会丢失。",
+        ),
+      ).not.toBeInTheDocument();
+    });
+    expect(harness.payloads("status.error").at(-1)).toBeNull();
+
+    client.close();
+    harness.close();
+  });
+
+  it("ignores a stale autosave failure after a newer save succeeds", async () => {
+    const project = projectWithSource();
+    const raster = sourceRaster(30, 20);
+    const firstSave = deferred<void>();
+    const harness = createSdkHarness({
+      latestProject: storedProjectRecord(project),
+    });
+    const client = await harness.connect();
+    const save = vi
+      .spyOn(client.projects, "save")
+      .mockReturnValueOnce(firstSave.promise)
+      .mockResolvedValue(undefined);
+    mountWorkshop(client, new FakeEngine(), imageCodecFor(raster));
+
+    await screen.findByRole("heading", {
+      name: "编辑拼豆矩阵",
+    });
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "单豆节距" }),
+      { target: { value: "3.2" } },
+    );
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      firstSave.reject(new Error("late save failure"));
+      await firstSave.promise.catch(() => undefined);
+    });
+
+    expect(
+      screen.queryByText(
+        "自动保存暂时失败。当前页面中的编辑不会丢失。",
+      ),
+    ).not.toBeInTheDocument();
+    expect(harness.payloads("status.error")).not.toContainEqual(
+      expect.objectContaining({ code: "project-save-failed" }),
+    );
+
+    client.close();
+    harness.close();
+  });
+
+  it("queues the latest edit before a rapid page exit", async () => {
+    const project = projectWithSource();
+    const raster = sourceRaster(30, 20);
+    const harness = createSdkHarness({
+      latestProject: storedProjectRecord(project),
+    });
+    const client = await harness.connect();
+    const save = vi.spyOn(client.projects, "save");
+    render(
+      <BeadWorkshopModule
+        client={client}
+        locale="zh-CN"
+        createEngine={() => new FakeEngine()}
+        imageCodec={imageCodecFor(raster)}
+        autosaveDelayMs={10_000}
+      />,
+    );
+
+    await screen.findByRole("heading", {
+      name: "编辑拼豆矩阵",
+    });
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "单豆节距" }),
+      { target: { value: "3.2" } },
+    );
+    expect(save).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        project: expect.objectContaining({ beadPitchMm: 3.2 }),
+      }),
+    );
 
     client.close();
     harness.close();

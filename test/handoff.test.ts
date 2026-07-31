@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { createBeadProject } from "../src/domain/project";
 import { renderBeadProject } from "../src/domain/renderer";
+import { BEAD_MODULE_VERSION } from "../src/domain/types";
 import {
   prepareBeadHandoff,
   toWorkshopImageHandoff,
@@ -168,6 +169,10 @@ describe("bead handoff", () => {
     );
     expect(handoff.colorLibraryId).toBe(
       "material-archive:official",
+    );
+    expect(handoff.moduleVersion).toBe(BEAD_MODULE_VERSION);
+    expect(handoff.recipeSource.moduleVersion).toBe(
+      BEAD_MODULE_VERSION,
     );
     expect(handoff.layout).toEqual({
       kind: "square-grid",

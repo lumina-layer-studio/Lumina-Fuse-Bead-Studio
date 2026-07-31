@@ -12,7 +12,7 @@ describe("module package contract", () => {
     expect(manifest).toEqual({
       manifestVersion: 1,
       id: "lumina.bead-pattern",
-      version: "1.0.2",
+      version: "1.0.7",
       name: { "zh-CN": "拼豆工作台", "en-US": "Fuse Bead Studio" },
       description: {
         "zh-CN": "识别、校正并模拟熨烫融合后的拼豆图纸",

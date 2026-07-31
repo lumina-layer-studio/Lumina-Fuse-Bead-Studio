@@ -35,6 +35,7 @@ import {
 import {
   latestBeadProject,
   pickBeadSource,
+  queueCachedBeadProjectSave,
   saveBeadProject,
 } from "../host/hostAdapter";
 import {
@@ -183,6 +184,68 @@ function draftFromProject(
   };
 }
 
+function draftAfterCrop(
+  source: Raster,
+  draft: BeadCalibrationDraft,
+  previousCrop: CropRect | null,
+  nextCrop: CropRect | null,
+): BeadCalibrationDraft {
+  const previousOffsetX = previousCrop?.x ?? 0;
+  const previousOffsetY = previousCrop?.y ?? 0;
+  const nextOffsetX = nextCrop?.x ?? 0;
+  const nextOffsetY = nextCrop?.y ?? 0;
+  const originX = Math.min(
+    source.width - 1,
+    Math.max(
+      0,
+      draft.geometry.originX + previousOffsetX - nextOffsetX,
+    ),
+  );
+  const originY = Math.min(
+    source.height - 1,
+    Math.max(
+      0,
+      draft.geometry.originY + previousOffsetY - nextOffsetY,
+    ),
+  );
+  return {
+    ...draft,
+    geometry: {
+      originX,
+      originY,
+      cellWidth: (source.width - originX) / draft.columns,
+      cellHeight: (source.height - originY) / draft.rows,
+    },
+    orientation: { ...draft.orientation },
+    emptySelection: draft.emptySelection
+      ? { ...draft.emptySelection }
+      : null,
+  };
+}
+
+function squareFittedCrop(
+  original: Raster,
+  currentCrop: CropRect | null,
+  draft: BeadCalibrationDraft,
+): CropRect {
+  const pitch = Math.min(
+    draft.geometry.cellWidth,
+    draft.geometry.cellHeight,
+  );
+  const base = currentCrop ?? {
+    x: 0,
+    y: 0,
+    width: original.width,
+    height: original.height,
+  };
+  return normalizedCrop(original, {
+    x: base.x,
+    y: base.y,
+    width: draft.geometry.originX + pitch * draft.columns,
+    height: draft.geometry.originY + pitch * draft.rows,
+  });
+}
+
 function timestampAfter(previous: string): string {
   const previousTime = Date.parse(previous);
   const minimum = Number.isFinite(previousTime)
@@ -283,6 +346,8 @@ export function BeadWorkshopModule({
   const engineRef = useRef<BeadProcessingEngine | null>(null);
   const latestProjectRef = useRef<BeadProject | null>(null);
   const readyReportedRef = useRef(false);
+  const visibleErrorCodeRef = useRef<string | null>(null);
+  const saveAttemptRef = useRef(0);
   const colorLibraryRequestRef = useRef(0);
   const colorLibraryFlightRef =
     useRef<Promise<WorkshopColorLibrary | null> | null>(null);
@@ -361,6 +426,7 @@ export function BeadWorkshopModule({
   }, []);
 
   const clearVisibleError = useCallback(() => {
+    visibleErrorCodeRef.current = null;
     setVisibleError(null);
     ignoreFailure(client.status.error(null));
   }, [client.status]);
@@ -368,6 +434,7 @@ export function BeadWorkshopModule({
   const reportProcessingError = useCallback(
     (code: string) => {
       const message = t("workshop.bead.processingError");
+      visibleErrorCodeRef.current = code;
       setVisibleError(message);
       ignoreFailure(
         client.status.error({
@@ -435,10 +502,20 @@ export function BeadWorkshopModule({
 
   const persistProject = useCallback(
     async (project: BeadProject) => {
+      const attempt = saveAttemptRef.current + 1;
+      saveAttemptRef.current = attempt;
       try {
         await saveBeadProject(client, project);
+        if (saveAttemptRef.current !== attempt) return;
+        if (visibleErrorCodeRef.current === "project-save-failed") {
+          visibleErrorCodeRef.current = null;
+          setVisibleError(null);
+          ignoreFailure(client.status.error(null));
+        }
       } catch {
+        if (saveAttemptRef.current !== attempt) return;
         const message = t("workshop.bead.saveError");
+        visibleErrorCodeRef.current = "project-save-failed";
         setVisibleError(message);
         ignoreFailure(
           client.status.error({
@@ -599,15 +676,30 @@ export function BeadWorkshopModule({
       engineRef.current = null;
       engine?.dispose();
       const latest = latestProjectRef.current;
-      if (latest) void persistLatestProject(latest);
+      if (latest) {
+        const queued = queueCachedBeadProjectSave(client, latest);
+        if (queued) {
+          ignoreFailure(queued);
+        } else {
+          void persistLatestProject(latest);
+        }
+      }
     },
-    [invalidateProcessing],
+    [client, invalidateProcessing],
   );
 
   useEffect(() => {
-    const close = () => client.close();
-    window.addEventListener("pagehide", close, { once: true });
-    return () => window.removeEventListener("pagehide", close);
+    const flushLatestProject = () => {
+      const latest = latestProjectRef.current;
+      if (!latest) return;
+      const queued = queueCachedBeadProjectSave(client, latest);
+      if (queued) ignoreFailure(queued);
+    };
+    window.addEventListener("pagehide", flushLatestProject, {
+      once: true,
+    });
+    return () =>
+      window.removeEventListener("pagehide", flushLatestProject);
   }, [client]);
 
   useEffect(() => {
@@ -741,6 +833,7 @@ export function BeadWorkshopModule({
     } catch {
       if (!isCurrentPickRequest()) return;
       const message = t("workshop.bead.pickerError");
+      visibleErrorCodeRef.current = "image-pick-failed";
       setVisibleError(message);
       ignoreFailure(
         client.status.error({
@@ -778,6 +871,14 @@ export function BeadWorkshopModule({
     const nextRaster = nextCrop
       ? cropRaster(originalRaster, nextCrop)
       : originalRaster;
+    const nextDraft = calibrationDraft
+      ? draftAfterCrop(
+          nextRaster,
+          calibrationDraft,
+          calibrationCrop,
+          nextCrop,
+        )
+      : draftForRaster(nextRaster, "hard-pixel");
     if (recalibrationSession) {
       setRecalibrationSession({
         workingRaster: nextRaster,
@@ -788,13 +889,20 @@ export function BeadWorkshopModule({
       setWorkingRaster(nextRaster);
     }
     setClassification(null);
-    setCalibrationDraft(
-      draftForRaster(
-        nextRaster,
-        calibrationDraft?.inputMode ?? "hard-pixel",
+    setCalibrationDraft(nextDraft);
+    setCropOpen(false);
+    void classifyRaster(nextRaster, false);
+  };
+
+  const handleFitSquareGrid = () => {
+    if (!originalRaster || !calibrationDraft) return;
+    applyCrop(
+      squareFittedCrop(
+        originalRaster,
+        calibrationCrop,
+        calibrationDraft,
       ),
     );
-    setCropOpen(false);
   };
 
   const handleReturnToCalibration = () => {
@@ -957,7 +1065,6 @@ export function BeadWorkshopModule({
 
   const reportHandoffError = (error?: unknown) => {
     const message = t("workshop.bead.handoffError");
-    setVisibleError(message);
     const hostCode =
       typeof error === "object" &&
       error !== null &&
@@ -968,6 +1075,8 @@ export function BeadWorkshopModule({
     const code = /size|quota|payload|too.large/i.test(hostCode)
       ? "bead-handoff-size-or-quota-rejected"
       : "bead-handoff-failed";
+    visibleErrorCodeRef.current = code;
+    setVisibleError(message);
     ignoreFailure(
       client.status.error({
         code,
@@ -1191,6 +1300,7 @@ export function BeadWorkshopModule({
             onChange={handleCalibrationChange}
             onRecognize={handleRecognize}
             onOpenCrop={() => setCropOpen(true)}
+            onFitSquareGrid={handleFitSquareGrid}
             onReturnToEditor={
               recalibrationSession
                 ? handleReturnToEditor
