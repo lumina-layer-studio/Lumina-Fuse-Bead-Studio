@@ -140,6 +140,51 @@ describe("BeadEditorStep", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers recalibration only while the imported source is available", () => {
+    const state = createBeadEditorState(project());
+    const onReturnCalibration = vi.fn();
+    const { rerender } = render(
+      <BeadEditorStep
+        state={state}
+        renderResult={null}
+        renderBusy={false}
+        sourceRaster={{
+          width: 2,
+          height: 2,
+          data: new Uint8ClampedArray(16),
+        }}
+        translate={t}
+        dispatch={vi.fn()}
+        onNewProject={vi.fn()}
+        onReturnCalibration={onReturnCalibration}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "新建图纸" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "返回校准" }),
+    );
+    expect(onReturnCalibration).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <BeadEditorStep
+        state={state}
+        renderResult={null}
+        renderBusy={false}
+        sourceRaster={null}
+        translate={t}
+        dispatch={vi.fn()}
+        onNewProject={vi.fn()}
+        onReturnCalibration={onReturnCalibration}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "返回校准" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("offers visible compression anchors without changing cells or pitch", () => {
     function Harness() {
       const [state, dispatch] = useReducer(

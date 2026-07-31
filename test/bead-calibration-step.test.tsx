@@ -6,7 +6,10 @@ import {
   BeadCalibrationStep,
   type BeadCalibrationDraft,
 } from "../src/app/BeadCalibrationStep";
-import type { Raster } from "../src/domain/types";
+import type {
+  PatternClassification,
+  Raster,
+} from "../src/domain/types";
 import { translate } from "../src/i18n/translations";
 
 const t = (key: string) => translate("zh-CN", key);
@@ -46,30 +49,41 @@ function initialDraft(
 function Harness({
   draft = initialDraft(),
   onRecognize = vi.fn(),
+  onReturnToEditor,
+  busy = false,
+  classification,
 }: {
   draft?: BeadCalibrationDraft;
   onRecognize?: () => void;
+  onReturnToEditor?: () => void;
+  busy?: boolean;
+  classification?: PatternClassification | null;
 }) {
   const [value, setValue] = useState(draft);
   return (
     <BeadCalibrationStep
       source={raster()}
       fileName="pattern.png"
-      classification={{
-        mode: "hard-pixel",
-        confidence: 0.91,
-        scores: {
-          "numbered-grid": 0.1,
-          "hard-pixel": 0.91,
-          "ring-preview": 0.2,
-        },
-      }}
+      classification={
+        classification === undefined
+          ? {
+              mode: "hard-pixel",
+              confidence: 0.91,
+              scores: {
+                "numbered-grid": 0.1,
+                "hard-pixel": 0.91,
+                "ring-preview": 0.2,
+              },
+            }
+          : classification
+      }
       draft={value}
-      busy={false}
+      busy={busy}
       translate={t}
       onChange={setValue}
       onRecognize={onRecognize}
       onOpenCrop={vi.fn()}
+      onReturnToEditor={onReturnToEditor}
       canCrop
     />
   );
@@ -167,5 +181,57 @@ describe("BeadCalibrationStep", () => {
     expect(
       screen.getByRole("button", { name: "水平翻转" }),
     ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("returns to the editor unless calibration is busy", () => {
+    const onReturnToEditor = vi.fn();
+    const { rerender } = render(
+      <Harness onReturnToEditor={onReturnToEditor} />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "裁剪图案" }),
+    ).toBeInTheDocument();
+    const returnButton = screen.getByRole("button", {
+      name: "返回编辑器",
+    });
+    expect(returnButton).toBeEnabled();
+    fireEvent.click(returnButton);
+    expect(onReturnToEditor).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <Harness busy onReturnToEditor={onReturnToEditor} />,
+    );
+    const busyReturnButton = screen.getByRole("button", {
+      name: "返回编辑器",
+    });
+    expect(busyReturnButton).toBeDisabled();
+    fireEvent.click(busyReturnButton);
+    expect(onReturnToEditor).toHaveBeenCalledTimes(1);
+  });
+
+  it("distinguishes unavailable classification from active analysis", () => {
+    const { rerender } = render(
+      <Harness classification={null} />,
+    );
+
+    expect(
+      screen.getByText(
+        "未能自动判断图纸类型，请手动确认。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("正在分析图纸类型…"),
+    ).not.toBeInTheDocument();
+
+    rerender(<Harness busy classification={null} />);
+    expect(
+      screen.getByText("正在分析图纸类型…"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "未能自动判断图纸类型，请手动确认。",
+      ),
+    ).not.toBeInTheDocument();
   });
 });

@@ -18,6 +18,7 @@ const zhCN = {
   "workshop.bead.calibrationDescription":
     "确认图纸类型、正方形网格和空位样本。识别只读取你确认的格子。",
   "workshop.bead.cropPattern": "裁剪图案",
+  "workshop.bead.returnToEditor": "返回编辑器",
   "workshop.bead.inputMode": "图纸类型",
   "workshop.bead.mode.numbered-grid": "编号网格图",
   "workshop.bead.mode.hard-pixel": "硬边像素图",
@@ -25,6 +26,8 @@ const zhCN = {
   "workshop.bead.mode.ambiguous": "需要手动确认",
   "workshop.bead.classification": "建议：{mode} · 置信度 {confidence}%",
   "workshop.bead.classifying": "正在分析图纸类型…",
+  "workshop.bead.classificationUnavailable":
+    "未能自动判断图纸类型，请手动确认。",
   "workshop.bead.rows": "行数",
   "workshop.bead.columns": "列数",
   "workshop.bead.originX": "网格原点 X",
@@ -97,6 +100,7 @@ const zhCN = {
   "workshop.bead.physicalSize": "{width} × {height} mm",
   "workshop.bead.rendering": "正在计算高分辨率压合预览…",
   "workshop.bead.newProject": "新建图纸",
+  "workshop.bead.returnCalibration": "返回校准",
   "workshop.bead.handoff": "交给 Lumina 转换",
   "workshop.bead.handoffEmpty": "至少保留一颗有颜色的拼豆后才能转换",
   "workshop.bead.handoffSummaryTitle": "确认交给 Lumina 转换？",
@@ -155,6 +159,7 @@ const enUS = {
   "workshop.bead.calibrationDescription":
     "Confirm the pattern type, square grid, and empty-cell sample. Recognition reads only the cells you confirm.",
   "workshop.bead.cropPattern": "Crop pattern",
+  "workshop.bead.returnToEditor": "Back to editor",
   "workshop.bead.inputMode": "Pattern type",
   "workshop.bead.mode.numbered-grid": "Numbered grid",
   "workshop.bead.mode.hard-pixel": "Hard-edged pixel chart",
@@ -162,6 +167,8 @@ const enUS = {
   "workshop.bead.mode.ambiguous": "Needs manual confirmation",
   "workshop.bead.classification": "Suggested: {mode} · {confidence}% confidence",
   "workshop.bead.classifying": "Analyzing the pattern type…",
+  "workshop.bead.classificationUnavailable":
+    "The pattern type could not be detected automatically. Confirm it manually.",
   "workshop.bead.rows": "Rows",
   "workshop.bead.columns": "Columns",
   "workshop.bead.originX": "Grid origin X",
@@ -236,6 +243,7 @@ const enUS = {
   "workshop.bead.physicalSize": "{width} × {height} mm",
   "workshop.bead.rendering": "Rendering the high-resolution pressure preview…",
   "workshop.bead.newProject": "New pattern",
+  "workshop.bead.returnCalibration": "Back to calibration",
   "workshop.bead.handoff": "Send to Lumina Converter",
   "workshop.bead.handoffEmpty":
     "Keep at least one colored bead before converting",

@@ -42,6 +42,7 @@ interface BeadCalibrationStepProps {
   onChange(next: BeadCalibrationDraft): void;
   onRecognize(): void;
   onOpenCrop(): void;
+  onReturnToEditor?(): void;
   canCrop: boolean;
 }
 
@@ -82,6 +83,7 @@ export function BeadCalibrationStep({
   onChange,
   onRecognize,
   onOpenCrop,
+  onReturnToEditor,
   canCrop,
 }: BeadCalibrationStepProps) {
   const [pickMode, setPickMode] =
@@ -160,7 +162,9 @@ export function BeadCalibrationStep({
         mode: t(`workshop.bead.mode.${classification.mode}`),
         confidence: Math.round(classification.confidence * 100),
       })
-    : t("workshop.bead.classifying");
+    : busy
+      ? t("workshop.bead.classifying")
+      : t("workshop.bead.classificationUnavailable");
 
   return (
     <div className="workbench-stack">
@@ -169,12 +173,24 @@ export function BeadCalibrationStep({
         title={t("workshop.bead.calibrationTitle")}
         description={t("workshop.bead.calibrationDescription")}
         action={
-          canCrop ? (
-            <Button
-              label={t("workshop.bead.cropPattern")}
-              variant="secondary"
-              onClick={onOpenCrop}
-            />
+          onReturnToEditor || canCrop ? (
+            <div className="control-row">
+              {onReturnToEditor ? (
+                <Button
+                  label={t("workshop.bead.returnToEditor")}
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={onReturnToEditor}
+                />
+              ) : null}
+              {canCrop ? (
+                <Button
+                  label={t("workshop.bead.cropPattern")}
+                  variant="secondary"
+                  onClick={onOpenCrop}
+                />
+              ) : null}
+            </div>
           ) : undefined
         }
       />

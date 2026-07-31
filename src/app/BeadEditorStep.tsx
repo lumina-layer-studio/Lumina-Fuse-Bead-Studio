@@ -36,6 +36,7 @@ interface BeadEditorStepProps {
   translate(key: string): string;
   dispatch(action: BeadEditorAction): void;
   onNewProject(): void;
+  onReturnCalibration?(): void;
   onHandoff?(): void;
   handoffBusy?: boolean;
   colorLibrary?: WorkshopColorLibrary | null;
@@ -82,6 +83,7 @@ export function BeadEditorStep({
   translate: t,
   dispatch,
   onNewProject,
+  onReturnCalibration,
   onHandoff,
   handoffBusy = false,
   colorLibrary = null,
@@ -192,11 +194,20 @@ export function BeadEditorStep({
         title={t("workshop.bead.editorTitle")}
         description={t("workshop.bead.editorDescription")}
         action={
-          <Button
-            label={t("workshop.bead.newProject")}
-            variant="secondary"
-            onClick={onNewProject}
-          />
+          <div className="control-row">
+            {sourceRaster !== null && onReturnCalibration ? (
+              <Button
+                label={t("workshop.bead.returnCalibration")}
+                variant="secondary"
+                onClick={onReturnCalibration}
+              />
+            ) : null}
+            <Button
+              label={t("workshop.bead.newProject")}
+              variant="secondary"
+              onClick={onNewProject}
+            />
+          </div>
         }
       />
 
