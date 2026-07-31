@@ -839,14 +839,14 @@ describe("BeadWorkshopModule", () => {
     harness.close();
   });
 
-  it("keeps source raster and crop aligned with recalibration checkpoints through undo and redo", async () => {
+  it("keeps a staged original image aligned with recalibration checkpoints through undo and redo", async () => {
     vi.mocked(
       HTMLCanvasElement.prototype.getContext,
     ).mockReturnValue(canvasContextStub());
     const raster = sourceRaster(30, 20);
     const project = projectWithSource();
     const engine = new FakeEngine({
-      recognitions: [recognitionResult(2, 1)],
+      recognitions: [recognitionResult(2, 3)],
     });
     const { client, harness } = await startRestoredEditor(
       project,
@@ -855,19 +855,37 @@ describe("BeadWorkshopModule", () => {
     );
 
     await returnToCalibration();
-    await openCropAndSet({ x: 0, y: 0, width: 10, height: 20 });
-    setGridDimensions(2, 1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "裁剪图案" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "使用原图" }),
+    );
+    setGridDimensions(2, 3);
     fireEvent.click(
       screen.getByRole("button", { name: "图中没有空位" }),
     );
     await recognizeAndOpenEditor();
+    expect(engine.recognitionRequests.at(-1)?.source).toMatchObject({
+      width: 30,
+      height: 20,
+    });
+    await waitFor(() => {
+      expect(
+        (
+          harness.savedProjects().at(-1)?.project as
+            | BeadProject
+            | undefined
+        )?.calibration.crop,
+      ).toBeNull();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "原图" }));
     const sourceCanvas = screen.getByRole("img", {
       name: "拼豆图纸原图",
     }) as HTMLCanvasElement;
     await waitFor(() => {
-      expect(sourceCanvas.width).toBe(10);
+      expect(sourceCanvas.width).toBe(30);
       expect(sourceCanvas.height).toBe(20);
     });
 
@@ -886,11 +904,20 @@ describe("BeadWorkshopModule", () => {
       name: "拼豆图纸原图",
     }) as HTMLCanvasElement;
     await waitFor(() => {
-      expect(redoneSourceCanvas.width).toBe(10);
+      expect(redoneSourceCanvas.width).toBe(30);
       expect(redoneSourceCanvas.height).toBe(20);
     });
+    await waitFor(() => {
+      expect(
+        (
+          harness.savedProjects().at(-1)?.project as
+            | BeadProject
+            | undefined
+        )?.calibration.crop,
+      ).toBeNull();
+    });
     await returnToCalibration();
-    await expectCrop({ x: 0, y: 0, width: 10, height: 20 });
+    await expectCrop({ x: 0, y: 0, width: 30, height: 20 });
 
     client.close();
     harness.close();
@@ -1100,6 +1127,76 @@ describe("BeadWorkshopModule", () => {
     client.close();
     harness.close();
   });
+
+  it.each(["resolve", "reject"] as const)(
+    "ignores a pending image pick that %s after unmount",
+    async (settlement) => {
+      const pendingPick = deferred<
+        Awaited<ReturnType<WorkshopClient["image"]["pick"]>>
+      >();
+      const harness = createSdkHarness();
+      const client = await harness.connect();
+      vi.spyOn(client.image, "pick").mockReturnValue(
+        pendingPick.promise,
+      );
+      const progress = vi.spyOn(client.status, "progress");
+      const error = vi.spyOn(client.status, "error");
+      const engine = new FakeEngine();
+      const classify = vi.spyOn(engine, "classify");
+      const createEngine = vi.fn(() => engine);
+      const view = render(
+        <BeadWorkshopModule
+          client={client}
+          locale="zh-CN"
+          createEngine={createEngine}
+          imageCodec={codec}
+          autosaveDelayMs={0}
+        />,
+      );
+
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "选择拼豆图纸",
+        }),
+      );
+      view.unmount();
+      const progressCallsAfterCleanup = progress.mock.calls.length;
+      const errorCallsAfterCleanup = error.mock.calls.length;
+
+      await act(async () => {
+        if (settlement === "resolve") {
+          pendingPick.resolve({
+            name: "late.png",
+            mimeType: "image/png",
+            bytes: new Uint8Array([1, 2, 3]).buffer,
+            raster: sourceRaster(),
+          });
+        } else {
+          pendingPick.reject(new Error("late picker failure"));
+        }
+        await pendingPick.promise.catch(() => undefined);
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+
+      expect(createEngine).not.toHaveBeenCalled();
+      expect(classify).not.toHaveBeenCalled();
+      expect(
+        progress.mock.calls
+          .slice(progressCallsAfterCleanup)
+          .map(([payload]) => payload)
+          .filter((payload) => payload !== null),
+      ).toEqual([]);
+      expect(
+        error.mock.calls
+          .slice(errorCallsAfterCleanup)
+          .map(([payload]) => payload)
+          .filter((payload) => payload !== null),
+      ).toEqual([]);
+
+      client.close();
+      harness.close();
+    },
+  );
 
   it("resumes a valid latest project and renders it before ready", async () => {
     const project = createBeadProject({

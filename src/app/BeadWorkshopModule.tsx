@@ -286,6 +286,7 @@ export function BeadWorkshopModule({
   const colorLibraryRequestRef = useRef(0);
   const colorLibraryFlightRef =
     useRef<Promise<WorkshopColorLibrary | null> | null>(null);
+  const lifecycleEpochRef = useRef(0);
   const processingEpochRef = useRef(0);
   const activeProcessingRef =
     useRef<ActiveProcessingTask | null>(null);
@@ -324,7 +325,9 @@ export function BeadWorkshopModule({
   );
   const calibrationRaster =
     recalibrationSession?.workingRaster ?? workingRaster;
-  const calibrationCrop = recalibrationSession?.crop ?? crop;
+  const calibrationCrop = recalibrationSession
+    ? recalibrationSession.crop
+    : crop;
 
   const getEngine = useCallback(() => {
     engineRef.current ??= createEngine();
@@ -569,6 +572,7 @@ export function BeadWorkshopModule({
 
   useEffect(
     () => () => {
+      lifecycleEpochRef.current += 1;
       invalidateProcessing();
       ignoreFailure(client.status.progress(null));
       engineRef.current?.dispose();
@@ -686,6 +690,7 @@ export function BeadWorkshopModule({
 
   const handlePickImage = async () => {
     invalidateProcessing();
+    const lifecycleEpoch = lifecycleEpochRef.current;
     setProcessingPhase("idle");
     setIsPicking(true);
     clearVisibleError();
@@ -699,12 +704,15 @@ export function BeadWorkshopModule({
     );
     try {
       const picked = await pickBeadSource(client);
+      if (lifecycleEpochRef.current !== lifecycleEpoch) return;
       if (picked) {
+        setIsPicking(false);
         await preparePickedImage(picked);
       } else {
         ignoreFailure(client.status.progress(null));
       }
     } catch {
+      if (lifecycleEpochRef.current !== lifecycleEpoch) return;
       const message = t("workshop.bead.pickerError");
       setVisibleError(message);
       ignoreFailure(
@@ -716,7 +724,9 @@ export function BeadWorkshopModule({
       );
       ignoreFailure(client.status.progress(null));
     } finally {
-      setIsPicking(false);
+      if (lifecycleEpochRef.current === lifecycleEpoch) {
+        setIsPicking(false);
+      }
     }
   };
 
