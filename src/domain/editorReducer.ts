@@ -316,14 +316,18 @@ function applyHistoryEntry(
         direction === "forward" ? patch.after : patch.before;
     }
   }
+  const targetUpdatedAt =
+    direction === "forward"
+      ? entry.afterUpdatedAt
+      : entry.beforeUpdatedAt;
   return validateBeadProject({
     ...project,
     cells,
     confidenceIssues,
-    updatedAt:
-      direction === "forward"
-        ? entry.afterUpdatedAt
-        : entry.beforeUpdatedAt,
+    updatedAt: latestProjectUpdatedAt(
+      project.updatedAt,
+      targetUpdatedAt,
+    ),
   });
 }
 

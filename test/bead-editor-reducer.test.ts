@@ -782,6 +782,173 @@ describe("bead editor reducer", () => {
     expect(state.selectedCellIndex).toBe(6);
   });
 
+  it("keeps patch timestamps monotonic after checkpoint round trips", () => {
+    const patchUpdatedAt = "2026-07-30T02:00:00.000Z";
+    const replacementUpdatedAt = "2026-07-30T03:00:00.000Z";
+    const originalUpdatedAt = "2026-07-30T04:00:00.000Z";
+    let state = createBeadEditorState(makeCheckpointProject());
+
+    state = beadEditorReducer(state, {
+      type: "replace-project",
+      project: makeRecognitionReplacement(),
+    });
+    state = beadEditorReducer(state, {
+      type: "apply-tool",
+      tool: "paint",
+      cellIndex: 0,
+      paletteIndex: 0,
+      updatedAt: patchUpdatedAt,
+    });
+    state = beadEditorReducer(state, {
+      type: "set-compression",
+      compression: 88,
+      updatedAt: replacementUpdatedAt,
+    });
+    expect(state.present.cells[0]).toEqual({
+      kind: "color",
+      paletteIndex: 0,
+    });
+    expect(state.present.compression).toBe(88);
+    expect(state.past.map((entry) => entry.kind)).toEqual([
+      "project",
+      "patch",
+    ]);
+
+    state = beadEditorReducer(state, { type: "undo" });
+    expect(state.present.cells[0]).toEqual({ kind: "empty" });
+    expect(state.present.compression).toBe(88);
+    expect(state.past.map((entry) => entry.kind)).toEqual([
+      "project",
+    ]);
+    expect(state.future.map((entry) => entry.kind)).toEqual([
+      "patch",
+    ]);
+
+    state = beadEditorReducer(state, { type: "undo" });
+    expect(state.present.rows).toBe(3);
+    expect(state.present.compression).toBe(50);
+    expect(state.present.printMapping?.libraryId).toBe(
+      "original-library",
+    );
+    expect(state.past).toEqual([]);
+    expect(state.future.map((entry) => entry.kind)).toEqual([
+      "project",
+      "patch",
+    ]);
+
+    state = beadEditorReducer(state, {
+      type: "set-compression",
+      compression: 73,
+      updatedAt: originalUpdatedAt,
+    });
+    state = beadEditorReducer(state, { type: "redo" });
+    expect(state.present.rows).toBe(2);
+    expect(state.present.cells[0]).toEqual({ kind: "empty" });
+    expect(state.present.compression).toBe(88);
+    expect(state.present.printMapping?.libraryId).toBe(
+      "replacement-library",
+    );
+    expect(state.present.updatedAt).toBe(originalUpdatedAt);
+    expect(state.past.map((entry) => entry.kind)).toEqual([
+      "project",
+    ]);
+    expect(state.future.map((entry) => entry.kind)).toEqual([
+      "patch",
+    ]);
+
+    state = beadEditorReducer(state, { type: "redo" });
+    const firstRedoPatchUpdatedAt = state.present.updatedAt;
+    expect(state.present.cells[0]).toEqual({
+      kind: "color",
+      paletteIndex: 0,
+    });
+    expect(state.present.compression).toBe(88);
+    expect(state.past.map((entry) => entry.kind)).toEqual([
+      "project",
+      "patch",
+    ]);
+    expect(state.future).toEqual([]);
+
+    state = beadEditorReducer(state, { type: "undo" });
+    state = beadEditorReducer(state, { type: "undo" });
+    expect(state.present.rows).toBe(3);
+    expect(state.present.compression).toBe(73);
+    expect(state.present.updatedAt).toBe(originalUpdatedAt);
+    expect(state.past).toEqual([]);
+    expect(state.future.map((entry) => entry.kind)).toEqual([
+      "project",
+      "patch",
+    ]);
+
+    state = beadEditorReducer(state, { type: "redo" });
+    state = beadEditorReducer(state, { type: "redo" });
+    expect(state.present.rows).toBe(2);
+    expect(state.present.cells[0]).toEqual({
+      kind: "color",
+      paletteIndex: 0,
+    });
+    expect(state.present.compression).toBe(88);
+    expect(state.past.map((entry) => entry.kind)).toEqual([
+      "project",
+      "patch",
+    ]);
+    expect(state.future).toEqual([]);
+    expect(firstRedoPatchUpdatedAt).toBe(originalUpdatedAt);
+    expect(state.present.updatedAt).toBe(originalUpdatedAt);
+  });
+
+  it("preserves print mapping tri-state through project checkpoints", () => {
+    const cases = ["absent", "undefined", "null"] as const;
+
+    for (const mappingState of cases) {
+      const replacement = makeRecognitionReplacement();
+      if (mappingState === "absent") {
+        delete replacement.printMapping;
+      } else if (mappingState === "undefined") {
+        replacement.printMapping = undefined;
+      } else {
+        replacement.printMapping = null;
+      }
+      const expectedHasOwn = mappingState !== "absent";
+      const expectedValue =
+        mappingState === "null" ? null : undefined;
+      const expectMappingState = (project: BeadProject): void => {
+        expect(
+          Object.prototype.hasOwnProperty.call(
+            project,
+            "printMapping",
+          ),
+        ).toBe(expectedHasOwn);
+        expect(project.printMapping).toBe(expectedValue);
+      };
+      let state = createBeadEditorState(makeCheckpointProject());
+
+      state = beadEditorReducer(state, {
+        type: "replace-project",
+        project: replacement,
+      });
+      expectMappingState(state.present);
+      const pastEntry = state.past[0];
+      if (!pastEntry || pastEntry.kind !== "project") {
+        throw new Error("Expected a project history entry.");
+      }
+      expectMappingState(pastEntry.afterProject);
+
+      state = beadEditorReducer(state, { type: "undo" });
+      expect(state.present.printMapping?.libraryId).toBe(
+        "original-library",
+      );
+      const futureEntry = state.future[0];
+      if (!futureEntry || futureEntry.kind !== "project") {
+        throw new Error("Expected a project history entry.");
+      }
+      expectMappingState(futureEntry.afterProject);
+
+      state = beadEditorReducer(state, { type: "redo" });
+      expectMappingState(state.present);
+    }
+  });
+
   it("keeps patch history safe across a project checkpoint boundary", () => {
     const original = makeCheckpointProject();
     const replacement = makeRecognitionReplacement();
