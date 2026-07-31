@@ -18,6 +18,7 @@ import {
 } from "../domain/editorReducer";
 import {
   createBeadProject,
+  validateBeadProject,
 } from "../domain/project";
 import { cropRaster, suggestGrid } from "../domain/recognition";
 import type { BeadRenderResult } from "../domain/renderer";
@@ -79,6 +80,21 @@ type BeadWorkflowStage =
   | "calibration"
   | "editor";
 
+type BeadProcessingPhase =
+  | "idle"
+  | "classifying"
+  | "recognizing";
+
+interface RecalibrationSession {
+  workingRaster: Raster;
+  crop: CropRect | null;
+}
+
+interface ActiveProcessingTask {
+  epoch: number;
+  id: number;
+}
+
 export interface BeadProcessingEngine {
   classify(source: Raster): BeadWorkerTask<PatternClassification>;
   recognize(
@@ -139,6 +155,42 @@ function draftForRaster(
   };
 }
 
+function draftFromProject(
+  source: Raster,
+  project: BeadProject,
+): BeadCalibrationDraft {
+  const swapsDimensions =
+    project.calibration.orientation.rotation === 90 ||
+    project.calibration.orientation.rotation === 270;
+  const rows = swapsDimensions ? project.columns : project.rows;
+  const columns = swapsDimensions ? project.rows : project.columns;
+  const originX = project.calibration.origin.x;
+  const originY = project.calibration.origin.y;
+  return {
+    inputMode: project.calibration.inputMode,
+    rows,
+    columns,
+    geometry: {
+      originX,
+      originY,
+      cellWidth: (source.width - originX) / columns,
+      cellHeight: (source.height - originY) / rows,
+    },
+    orientation: { ...project.calibration.orientation },
+    emptySelection: { ...project.calibration.emptySelection },
+    transparentSupportSampleCellIndex:
+      project.calibration.transparentSupportSampleCellIndex,
+  };
+}
+
+function timestampAfter(previous: string): string {
+  const previousTime = Date.parse(previous);
+  const minimum = Number.isFinite(previousTime)
+    ? previousTime + 1
+    : Date.now();
+  return new Date(Math.max(Date.now(), minimum)).toISOString();
+}
+
 function normalizedCrop(
   source: Raster,
   crop: CropRect,
@@ -191,7 +243,8 @@ export function BeadWorkshopModule({
     useState<BeadWorkflowStage>("loading");
   const [initialized, setInitialized] = useState(false);
   const [isPicking, setIsPicking] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingPhase, setProcessingPhase] =
+    useState<BeadProcessingPhase>("idle");
   const [visibleError, setVisibleError] =
     useState<string | null>(null);
   const [classification, setClassification] =
@@ -206,6 +259,8 @@ export function BeadWorkshopModule({
     useState<BeadProjectSource | null>(null);
   const [crop, setCrop] = useState<CropRect | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
+  const [recalibrationSession, setRecalibrationSession] =
+    useState<RecalibrationSession | null>(null);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [editorState, setEditorState] =
     useState<BeadEditorState | null>(null);
@@ -231,6 +286,9 @@ export function BeadWorkshopModule({
   const colorLibraryRequestRef = useRef(0);
   const colorLibraryFlightRef =
     useRef<Promise<WorkshopColorLibrary | null> | null>(null);
+  const processingEpochRef = useRef(0);
+  const activeProcessingRef =
+    useRef<ActiveProcessingTask | null>(null);
   const editorProject = editorState?.present ?? null;
   const colorMapping = useMemo(
     () =>
@@ -246,25 +304,50 @@ export function BeadWorkshopModule({
     editorProject.printMapping.libraryId === colorLibrary.id &&
     colorMapping?.stale === false;
   const renderProject = useMemo(
-    () =>
-      editorProject &&
-      colorMapping &&
-      previewColorMode === "print" &&
-      hasCurrentPrintMapping
+    () => {
+      if (stage !== "editor") return null;
+      return editorProject &&
+        colorMapping &&
+        previewColorMode === "print" &&
+        hasCurrentPrintMapping
         ? projectForPrintPreview(editorProject, colorMapping)
-        : editorProject,
+        : editorProject;
+    },
     [
       colorMapping,
       editorProject,
       hasCurrentPrintMapping,
       previewColorMode,
+      stage,
     ],
   );
+  const calibrationRaster =
+    recalibrationSession?.workingRaster ?? workingRaster;
+  const calibrationCrop = recalibrationSession?.crop ?? crop;
 
   const getEngine = useCallback(() => {
     engineRef.current ??= createEngine();
     return engineRef.current;
   }, [createEngine]);
+
+  const invalidateProcessing = useCallback(() => {
+    processingEpochRef.current += 1;
+    const active = activeProcessingRef.current;
+    activeProcessingRef.current = null;
+    if (active) engineRef.current?.cancel(active.id);
+  }, []);
+
+  const isCurrentProcessing = useCallback(
+    (token: ActiveProcessingTask) => {
+      const active = activeProcessingRef.current;
+      return (
+        active?.epoch === token.epoch &&
+        active.id === token.id &&
+        processingEpochRef.current === token.epoch
+      );
+    },
+    [],
+  );
 
   const dispatchEditor = useCallback((action: BeadEditorAction) => {
     setEditorState((current) =>
@@ -290,6 +373,54 @@ export function BeadWorkshopModule({
       );
     },
     [client.status, t],
+  );
+
+  const classifyRaster = useCallback(
+    async (source: Raster, applySuggestion: boolean) => {
+      invalidateProcessing();
+      const engine = getEngine();
+      const task = engine.classify(source);
+      const token = {
+        epoch: processingEpochRef.current,
+        id: task.id,
+      };
+      activeProcessingRef.current = token;
+      engine.cancelBefore(task.id);
+      setProcessingPhase("classifying");
+      ignoreFailure(
+        client.status.progress({
+          phase: "classify-pattern",
+          completed: 0,
+          total: 1,
+        }),
+      );
+      try {
+        const result = await task.promise;
+        if (!isCurrentProcessing(token)) return;
+        setClassification(result);
+        if (applySuggestion) {
+          const mode =
+            result.mode === "ambiguous"
+              ? "hard-pixel"
+              : result.mode;
+          setCalibrationDraft(draftForRaster(source, mode));
+        }
+      } catch {
+        if (!isCurrentProcessing(token)) return;
+        setClassification(null);
+      } finally {
+        if (!isCurrentProcessing(token)) return;
+        activeProcessingRef.current = null;
+        setProcessingPhase("idle");
+        ignoreFailure(client.status.progress(null));
+      }
+    },
+    [
+      client.status,
+      getEngine,
+      invalidateProcessing,
+      isCurrentProcessing,
+    ],
   );
 
   const persistProject = useCallback(
@@ -424,11 +555,13 @@ export function BeadWorkshopModule({
 
   useEffect(
     () => () => {
+      invalidateProcessing();
+      ignoreFailure(client.status.progress(null));
       engineRef.current?.dispose();
       const latest = latestProjectRef.current;
       if (latest) void persistProject(latest);
     },
-    [persistProject],
+    [client.status, invalidateProcessing, persistProject],
   );
 
   useEffect(() => {
@@ -524,6 +657,9 @@ export function BeadWorkshopModule({
     picked: Awaited<ReturnType<typeof pickBeadSource>>,
   ) => {
     if (!picked) return;
+    invalidateProcessing();
+    setProcessingPhase("idle");
+    setRecalibrationSession(null);
     setOriginalRaster(picked.raster);
     setWorkingRaster(picked.raster);
     setProjectSource(picked.source);
@@ -531,28 +667,12 @@ export function BeadWorkshopModule({
     setClassification(null);
     setCalibrationDraft(draftForRaster(picked.raster, "hard-pixel"));
     setStage("calibration");
-    setIsProcessing(true);
-
-    try {
-      const engine = getEngine();
-      const task = engine.classify(picked.raster);
-      engine.cancelBefore(task.id);
-      const result = await task.promise;
-      setClassification(result);
-      const mode =
-        result.mode === "ambiguous" ? "hard-pixel" : result.mode;
-      setCalibrationDraft(draftForRaster(picked.raster, mode));
-    } catch (error) {
-      if (!isCancellation(error)) {
-        reportProcessingError("pattern-classification-failed");
-      }
-    } finally {
-      setIsProcessing(false);
-      ignoreFailure(client.status.progress(null));
-    }
+    await classifyRaster(picked.raster, true);
   };
 
   const handlePickImage = async () => {
+    invalidateProcessing();
+    setProcessingPhase("idle");
     setIsPicking(true);
     clearVisibleError();
     setResumed(false);
@@ -590,12 +710,12 @@ export function BeadWorkshopModule({
     next: BeadCalibrationDraft,
   ) => {
     if (
-      workingRaster &&
+      calibrationRaster &&
       calibrationDraft &&
       next.inputMode !== calibrationDraft.inputMode
     ) {
       setCalibrationDraft(
-        draftForRaster(workingRaster, next.inputMode),
+        draftForRaster(calibrationRaster, next.inputMode),
       );
       return;
     }
@@ -607,8 +727,16 @@ export function BeadWorkshopModule({
     const nextRaster = nextCrop
       ? cropRaster(originalRaster, nextCrop)
       : originalRaster;
-    setCrop(nextCrop);
-    setWorkingRaster(nextRaster);
+    if (recalibrationSession) {
+      setRecalibrationSession({
+        workingRaster: nextRaster,
+        crop: nextCrop ? { ...nextCrop } : null,
+      });
+    } else {
+      setCrop(nextCrop);
+      setWorkingRaster(nextRaster);
+    }
+    setClassification(null);
     setCalibrationDraft(
       draftForRaster(
         nextRaster,
@@ -618,9 +746,75 @@ export function BeadWorkshopModule({
     setCropOpen(false);
   };
 
+  const handleReturnToCalibration = () => {
+    const project = editorState?.present;
+    if (!project || !originalRaster || !project.source) return;
+    invalidateProcessing();
+    setProcessingPhase("idle");
+    ignoreFailure(client.status.progress(null));
+    const committedCrop = project.calibration.crop
+      ? { ...project.calibration.crop }
+      : null;
+    const committedRaster = committedCrop
+      ? cropRaster(originalRaster, committedCrop)
+      : originalRaster;
+    setCrop(committedCrop);
+    setWorkingRaster(committedRaster);
+    setRecalibrationSession({
+      workingRaster: committedRaster,
+      crop: committedCrop,
+    });
+    setCalibrationDraft(draftFromProject(committedRaster, project));
+    setClassification(null);
+    setCropOpen(false);
+    clearVisibleError();
+    setResumed(false);
+    setStage("calibration");
+    void classifyRaster(committedRaster, false);
+  };
+
+  const handleReturnToEditor = () => {
+    invalidateProcessing();
+    setProcessingPhase("idle");
+    ignoreFailure(client.status.progress(null));
+    setRecalibrationSession(null);
+    setCalibrationDraft(null);
+    setClassification(null);
+    setCropOpen(false);
+    setStage("editor");
+  };
+
   const handleRecognize = async () => {
-    if (!workingRaster || !calibrationDraft) return;
-    setIsProcessing(true);
+    if (!calibrationRaster || !calibrationDraft) return;
+    const source = calibrationRaster;
+    const draft = calibrationDraft;
+    const previousProject = recalibrationSession
+      ? editorState?.present ?? null
+      : null;
+    const activeCrop = calibrationCrop
+      ? { ...calibrationCrop }
+      : null;
+    invalidateProcessing();
+    const engine = getEngine();
+    const task = engine.recognize({
+      source,
+      mode: draft.inputMode,
+      rows: draft.rows,
+      columns: draft.columns,
+      geometry: draft.geometry,
+      emptySelection:
+        draft.emptySelection ?? { kind: "none" },
+      transparentSupportSampleCellIndex:
+        draft.transparentSupportSampleCellIndex,
+      orientation: draft.orientation,
+    });
+    const token = {
+      epoch: processingEpochRef.current,
+      id: task.id,
+    };
+    activeProcessingRef.current = token;
+    engine.cancelBefore(task.id);
+    setProcessingPhase("recognizing");
     clearVisibleError();
     ignoreFailure(
       client.status.progress({
@@ -630,25 +824,16 @@ export function BeadWorkshopModule({
       }),
     );
     try {
-      const engine = getEngine();
-      const task = engine.recognize({
-        source: workingRaster,
-        mode: calibrationDraft.inputMode,
-        rows: calibrationDraft.rows,
-        columns: calibrationDraft.columns,
-        geometry: calibrationDraft.geometry,
-        emptySelection:
-          calibrationDraft.emptySelection ?? { kind: "none" },
-        transparentSupportSampleCellIndex:
-          calibrationDraft.transparentSupportSampleCellIndex,
-        orientation: calibrationDraft.orientation,
-      });
-      engine.cancelBefore(task.id);
       const result = await task.promise;
-      const now = new Date().toISOString();
-      const project = createBeadProject({
-        projectId: generatedProjectId(),
-        moduleVersion: BEAD_MODULE_VERSION,
+      if (!isCurrentProcessing(token)) return;
+      const now = previousProject
+        ? timestampAfter(previousProject.updatedAt)
+        : new Date().toISOString();
+      const recognized = createBeadProject({
+        projectId:
+          previousProject?.projectId ?? generatedProjectId(),
+        moduleVersion:
+          previousProject?.moduleVersion ?? BEAD_MODULE_VERSION,
         now,
         rows: result.rows,
         columns: result.columns,
@@ -657,34 +842,69 @@ export function BeadWorkshopModule({
             ? result.palette
             : [[0, 0, 0]],
         cells: result.cells,
-        source: projectSource,
+        source: previousProject?.source ?? projectSource,
         calibration: {
           inputMode: result.mode,
-          crop,
+          crop: activeCrop,
           origin: {
-            x: calibrationDraft.geometry.originX,
-            y: calibrationDraft.geometry.originY,
+            x: draft.geometry.originX,
+            y: draft.geometry.originY,
           },
-          orientation: calibrationDraft.orientation,
+          orientation: { ...draft.orientation },
           emptySelection:
-            calibrationDraft.emptySelection ?? { kind: "none" },
+            draft.emptySelection ?? { kind: "none" },
           transparentSupportSampleCellIndex:
-            calibrationDraft.transparentSupportSampleCellIndex,
+            draft.transparentSupportSampleCellIndex,
         },
         confidenceIssues: result.confidenceIssues,
+        beadPitchMm: previousProject?.beadPitchMm,
+        compression: previousProject?.compression,
+        ...(previousProject ? { printMapping: null } : {}),
       });
-      setEditorState(createBeadEditorState(project));
+      const project = previousProject
+        ? validateBeadProject({
+            ...recognized,
+            createdAt: previousProject.createdAt,
+          })
+        : recognized;
+      if (previousProject) {
+        setEditorState((current) =>
+          current
+            ? beadEditorReducer(current, {
+                type: "replace-project",
+                project,
+              })
+            : current,
+        );
+      } else {
+        setEditorState(createBeadEditorState(project));
+      }
+      setWorkingRaster(source);
+      setCrop(activeCrop);
+      setRecalibrationSession(null);
+      setCalibrationDraft(null);
+      setClassification(null);
+      setCropOpen(false);
       setStage("editor");
       setResumed(false);
       latestProjectRef.current = project;
-      ignoreFailure(client.status.progress(null));
     } catch (error) {
+      if (!isCurrentProcessing(token)) return;
+      if (previousProject) {
+        setRecalibrationSession(null);
+        setCalibrationDraft(null);
+        setClassification(null);
+        setCropOpen(false);
+        setStage("editor");
+      }
       if (!isCancellation(error)) {
         reportProcessingError("pattern-recognition-failed");
       }
-      ignoreFailure(client.status.progress(null));
     } finally {
-      setIsProcessing(false);
+      if (!isCurrentProcessing(token)) return;
+      activeProcessingRef.current = null;
+      setProcessingPhase("idle");
+      ignoreFailure(client.status.progress(null));
     }
   };
 
@@ -837,7 +1057,10 @@ export function BeadWorkshopModule({
   const handleNewProject = () => {
     const latest = latestProjectRef.current;
     if (latest) void persistProject(latest);
+    invalidateProcessing();
     engineRef.current?.cancelBefore(Number.MAX_SAFE_INTEGER);
+    setProcessingPhase("idle");
+    ignoreFailure(client.status.progress(null));
     setEditorState(null);
     setStage("upload");
     setClassification(null);
@@ -846,6 +1069,8 @@ export function BeadWorkshopModule({
     setWorkingRaster(null);
     setProjectSource(null);
     setCrop(null);
+    setCropOpen(false);
+    setRecalibrationSession(null);
     setRenderResult(null);
     setHandoffSummary(null);
     setPendingReplacement(null);
@@ -904,18 +1129,26 @@ export function BeadWorkshopModule({
         ) : null}
 
         {stage === "calibration" &&
-        workingRaster &&
+        calibrationRaster &&
         calibrationDraft ? (
           <BeadCalibrationStep
-            source={workingRaster}
+            source={calibrationRaster}
             fileName={projectSource?.fileName ?? ""}
             classification={classification}
             draft={calibrationDraft}
-            busy={isProcessing}
+            busy={processingPhase === "recognizing"}
+            classificationBusy={
+              processingPhase === "classifying"
+            }
             translate={t}
             onChange={handleCalibrationChange}
             onRecognize={handleRecognize}
             onOpenCrop={() => setCropOpen(true)}
+            onReturnToEditor={
+              recalibrationSession
+                ? handleReturnToEditor
+                : undefined
+            }
             canCrop={Boolean(sourceUrl)}
           />
         ) : null}
@@ -929,6 +1162,7 @@ export function BeadWorkshopModule({
             translate={t}
             dispatch={dispatchEditor}
             onNewProject={handleNewProject}
+            onReturnCalibration={handleReturnToCalibration}
             onHandoff={handleHandoff}
             handoffBusy={handoffBusy}
             colorLibrary={colorLibrary}
@@ -983,7 +1217,8 @@ export function BeadWorkshopModule({
             imageSrc={sourceUrl}
             imageWidth={originalRaster.width}
             imageHeight={originalRaster.height}
-            initialCrop={crop}
+            initialCrop={calibrationCrop}
+            busy={processingPhase !== "idle"}
             translate={t}
             onConfirm={(cropData) =>
               applyCrop(normalizedCrop(originalRaster, cropData))

@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -17,64 +18,113 @@ import type {
   BeadProject,
   PatternClassification,
   Raster,
+  RecognitionRequest,
   RecognitionResult,
 } from "../src/domain/types";
-import type { WorkshopColorLibrary } from "@lumina/workshop-sdk";
+import type {
+  WorkshopClient,
+  WorkshopColorLibrary,
+} from "@lumina/workshop-sdk";
 import { createSdkHarness } from "./helpers/sdkHarness";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
-function sourceRaster(): Raster {
-  const data = new Uint8ClampedArray(4 * 4 * 4);
+function sourceRaster(width = 4, height = 4): Raster {
+  const data = new Uint8ClampedArray(width * height * 4);
   data.fill(255);
-  return { width: 4, height: 4, data };
+  return { width, height, data };
+}
+
+const DEFAULT_CLASSIFICATION: PatternClassification = {
+  mode: "hard-pixel",
+  confidence: 0.94,
+  scores: {
+    "numbered-grid": 0.1,
+    "hard-pixel": 0.94,
+    "ring-preview": 0.1,
+  },
+};
+
+function recognitionResult(
+  rows = 2,
+  columns = 2,
+): RecognitionResult {
+  const cells = Array.from(
+    { length: rows * columns },
+    (_, index) =>
+      index % 4 === 2
+        ? ({ kind: "empty" } as const)
+        : index % 4 === 3
+          ? ({ kind: "transparent-support" } as const)
+          : ({
+              kind: "color",
+              paletteIndex: index % 2,
+            } as const),
+  );
+  return {
+    mode: "hard-pixel",
+    rows,
+    columns,
+    palette: [
+      [230, 40, 50],
+      [20, 120, 210],
+    ],
+    cells,
+    confidenceIssues: [],
+  };
+}
+
+interface FakeEngineOptions {
+  classifications?: Array<
+    PatternClassification | Promise<PatternClassification>
+  >;
+  recognitions?: Array<
+    RecognitionResult | Promise<RecognitionResult>
+  >;
 }
 
 class FakeEngine implements BeadProcessingEngine {
   private nextId = 1;
 
+  private readonly classifications: Array<
+    PatternClassification | Promise<PatternClassification>
+  >;
+
+  private readonly recognitions: Array<
+    RecognitionResult | Promise<RecognitionResult>
+  >;
+
   readonly dispose = vi.fn();
 
-  cancelBefore(): void {}
+  readonly cancelBefore = vi.fn();
 
-  cancel(): void {}
+  readonly cancel = vi.fn();
 
-  classify() {
-    const result: PatternClassification = {
-      mode: "hard-pixel",
-      confidence: 0.94,
-      scores: {
-        "numbered-grid": 0.1,
-        "hard-pixel": 0.94,
-        "ring-preview": 0.1,
-      },
-    };
+  readonly recognitionRequests: RecognitionRequest[] = [];
+
+  constructor(options: FakeEngineOptions = {}) {
+    this.classifications = [...(options.classifications ?? [])];
+    this.recognitions = [...(options.recognitions ?? [])];
+  }
+
+  classify(_source: Raster) {
+    const result =
+      this.classifications.shift() ?? DEFAULT_CLASSIFICATION;
     return { id: this.nextId++, promise: Promise.resolve(result) };
   }
 
-  recognize() {
-    const result: RecognitionResult = {
-      mode: "hard-pixel",
-      rows: 2,
-      columns: 2,
-      palette: [
-        [230, 40, 50],
-        [20, 120, 210],
-      ],
-      cells: [
-        { kind: "color", paletteIndex: 0 },
-        { kind: "color", paletteIndex: 1 },
-        { kind: "empty" },
-        { kind: "transparent-support" },
-      ],
-      confidenceIssues: [],
-    };
+  recognize(request: RecognitionRequest) {
+    this.recognitionRequests.push(request);
+    const result =
+      this.recognitions.shift() ?? recognitionResult();
     return { id: this.nextId++, promise: Promise.resolve(result) };
   }
 
@@ -93,6 +143,148 @@ class FakeEngine implements BeadProcessingEngine {
       ),
     };
   }
+}
+
+function imageCodecFor(raster: Raster): BeadImageCodec {
+  return {
+    decode: vi.fn().mockResolvedValue(raster),
+    encodePng: vi.fn().mockResolvedValue(
+      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]).buffer,
+    ),
+  };
+}
+
+function storedProjectRecord(project: BeadProject) {
+  const source = project.source;
+  return {
+    projectId: project.projectId,
+    schemaVersion: project.schemaVersion,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    project: {
+      ...project,
+      source: source
+        ? {
+            fileName: source.fileName,
+            mimeType: source.mimeType,
+            bytes: new Uint8Array([1, 2, 3]).buffer,
+            pixelWidth: source.pixelWidth,
+            pixelHeight: source.pixelHeight,
+          }
+        : null,
+    },
+  };
+}
+
+function projectWithSource(
+  overrides: Partial<BeadProject> = {},
+): BeadProject {
+  const raster = sourceRaster(30, 20);
+  const project = createBeadProject({
+    projectId: "transactional-project",
+    moduleVersion: "1.0.0",
+    now: "2026-07-31T00:00:00.000Z",
+    rows: 2,
+    columns: 2,
+    palette: [
+      [230, 40, 50],
+      [20, 120, 210],
+    ],
+    cells: [
+      { kind: "color", paletteIndex: 0 },
+      { kind: "empty" },
+      { kind: "transparent-support" },
+      { kind: "color", paletteIndex: 1 },
+    ],
+    source: {
+      fileName: "restored.png",
+      mimeType: "image/png",
+      blob: new Blob([new Uint8Array([1, 2, 3])], {
+        type: "image/png",
+      }),
+      pixelWidth: raster.width,
+      pixelHeight: raster.height,
+    },
+    calibration: {
+      inputMode: "hard-pixel",
+      crop: { x: 5, y: 0, width: 20, height: 20 },
+      origin: { x: 0, y: 0 },
+      orientation: {
+        rotation: 0,
+        flipHorizontal: false,
+        flipVertical: false,
+      },
+      emptySelection: { kind: "none" },
+      transparentSupportSampleCellIndex: null,
+    },
+    beadPitchMm: 3.1,
+    compression: 77,
+    printMapping: {
+      libraryId: "test-library",
+      libraryLabel: "Test library",
+      entries: [
+        { sourcePaletteIndex: 0, colorEntryId: "red" },
+        { sourcePaletteIndex: 1, colorEntryId: "blue" },
+      ],
+    },
+  });
+  return { ...project, ...overrides };
+}
+
+async function openCropAndSet(
+  crop: { x: number; y: number; width: number; height: number },
+) {
+  fireEvent.click(
+    await screen.findByRole("button", { name: "裁剪图案" }),
+  );
+  expect(
+    screen.getByRole("dialog", { name: "裁剪图案" }),
+  ).toBeInTheDocument();
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "左边距" }),
+    { target: { value: crop.x } },
+  );
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "上边距" }),
+    { target: { value: crop.y } },
+  );
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "宽度" }),
+    { target: { value: crop.width } },
+  );
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "高度" }),
+    { target: { value: crop.height } },
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "应用裁剪" }),
+  );
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "裁剪图案" }),
+    ).not.toBeInTheDocument();
+  });
+}
+
+async function expectCrop(
+  crop: { x: number; y: number; width: number; height: number },
+) {
+  fireEvent.click(
+    await screen.findByRole("button", { name: "裁剪图案" }),
+  );
+  expect(
+    screen.getByRole("spinbutton", { name: "左边距" }),
+  ).toHaveValue(crop.x);
+  expect(
+    screen.getByRole("spinbutton", { name: "上边距" }),
+  ).toHaveValue(crop.y);
+  expect(
+    screen.getByRole("spinbutton", { name: "宽度" }),
+  ).toHaveValue(crop.width);
+  expect(
+    screen.getByRole("spinbutton", { name: "高度" }),
+  ).toHaveValue(crop.height);
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
 }
 
 const codec: BeadImageCodec = {
@@ -115,6 +307,90 @@ const RETRIED_LIBRARY: WorkshopColorLibrary = {
     },
   ],
 };
+
+function mountWorkshop(
+  client: WorkshopClient,
+  engine: BeadProcessingEngine,
+  imageCodec: BeadImageCodec = codec,
+) {
+  return render(
+    <BeadWorkshopModule
+      client={client}
+      locale="zh-CN"
+      createEngine={() => engine}
+      imageCodec={imageCodec}
+      autosaveDelayMs={0}
+    />,
+  );
+}
+
+async function startPickedCalibration(
+  engine: BeadProcessingEngine,
+  raster: Raster,
+  fileName = "pattern.png",
+) {
+  const harness = createSdkHarness({
+    pickedImage: {
+      name: fileName,
+      mimeType: "image/png",
+      bytes: new Uint8Array([1, 2, 3]).buffer,
+      raster,
+    },
+  });
+  const client = await harness.connect();
+  mountWorkshop(client, engine);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "选择拼豆图纸" }),
+  );
+  await screen.findByRole("heading", { name: "校准图纸" });
+  return { client, harness };
+}
+
+async function startRestoredEditor(
+  project: BeadProject,
+  engine: BeadProcessingEngine,
+  raster = sourceRaster(30, 20),
+) {
+  const harness = createSdkHarness({
+    latestProject: storedProjectRecord(project),
+  });
+  const client = await harness.connect();
+  mountWorkshop(client, engine, imageCodecFor(raster));
+  await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+  return { client, harness };
+}
+
+function setGridDimensions(rows: number, columns: number) {
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "行数" }),
+    { target: { value: rows } },
+  );
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "列数" }),
+    { target: { value: columns } },
+  );
+}
+
+async function returnToCalibration() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "返回校准" }),
+  );
+  await screen.findByRole("heading", { name: "校准图纸" });
+}
+
+async function returnToEditor() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "返回编辑器" }),
+  );
+  await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+}
+
+async function recognizeAndOpenEditor() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "识别拼豆矩阵" }),
+  );
+  await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+}
 
 describe("BeadWorkshopModule", () => {
   beforeEach(() => {
@@ -188,6 +464,517 @@ describe("BeadWorkshopModule", () => {
         "status.diagnostics",
       ]),
     );
+    client.close();
+    harness.close();
+  });
+
+  it("wires recalibration, committed draft restoration, rollback, crop, and new-project navigation", async () => {
+    const raster = sourceRaster(30, 20);
+    const engine = new FakeEngine({
+      recognitions: [recognitionResult(2, 4)],
+    });
+    const { client, harness } = await startPickedCalibration(
+      engine,
+      raster,
+      "transaction.png",
+    );
+
+    await screen.findByText("建议：硬边像素图 · 置信度 94%");
+    await openCropAndSet({ x: 5, y: 5, width: 20, height: 10 });
+    setGridDimensions(2, 4);
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "网格原点 X" }),
+      { target: { value: 4 } },
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "网格原点 Y" }),
+      { target: { value: 2 } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "旋转 180°" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "水平翻转" }),
+    );
+    const canvas = screen.getByRole("img", {
+      name: "拼豆图纸网格校准",
+    });
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 400,
+      bottom: 200,
+      width: 400,
+      height: 200,
+      toJSON: () => ({}),
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "选择一个空位" }),
+    );
+    fireEvent.pointerDown(canvas, { clientX: 120, clientY: 80 });
+    fireEvent.click(
+      screen.getByRole("button", { name: "选择透明支撑" }),
+    );
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 80 });
+    expect(screen.getByText("空位样本：第 1 格")).toBeInTheDocument();
+    expect(
+      screen.getByText("透明支撑样本：第 2 格"),
+    ).toBeInTheDocument();
+
+    await recognizeAndOpenEditor();
+    await waitFor(() => {
+      expect(harness.savedProjects().at(-1)?.project).toMatchObject({
+        rows: 2,
+        columns: 4,
+        calibration: {
+          crop: { x: 5, y: 5, width: 20, height: 10 },
+          origin: { x: 4, y: 2 },
+          orientation: {
+            rotation: 180,
+            flipHorizontal: true,
+            flipVertical: false,
+          },
+          emptySelection: { kind: "sample", cellIndex: 0 },
+          transparentSupportSampleCellIndex: 1,
+        },
+      });
+    });
+    const committed = harness.savedProjects().at(-1)?.project;
+    expect(
+      screen.getByRole("button", { name: "返回校准" }),
+    ).toBeInTheDocument();
+
+    await returnToCalibration();
+    expect(
+      screen.getByRole("spinbutton", { name: "行数" }),
+    ).toHaveValue(2);
+    expect(
+      screen.getByRole("spinbutton", { name: "列数" }),
+    ).toHaveValue(4);
+    expect(
+      screen.getByRole("spinbutton", { name: "网格原点 X" }),
+    ).toHaveValue(4);
+    expect(
+      screen.getByRole("spinbutton", { name: "网格原点 Y" }),
+    ).toHaveValue(2);
+    expect(
+      screen.getByRole("button", { name: "旋转 180°" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "水平翻转" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("空位样本：第 1 格")).toBeInTheDocument();
+    expect(
+      screen.getByText("透明支撑样本：第 2 格"),
+    ).toBeInTheDocument();
+    await expectCrop({ x: 5, y: 5, width: 20, height: 10 });
+
+    await returnToEditor();
+    expect(screen.getByText("4 × 2")).toBeInTheDocument();
+    expect(harness.savedProjects().at(-1)?.project).toEqual(
+      committed,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "新建图纸" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "选择拼豆图纸" }),
+    ).toBeInTheDocument();
+    client.close();
+    harness.close();
+  });
+
+  it("restores pre-rotation dimensions for non-square 90-degree recognition", async () => {
+    const raster = sourceRaster(30, 20);
+    const engine = new FakeEngine({
+      recognitions: [
+        recognitionResult(3, 2),
+        recognitionResult(3, 2),
+      ],
+    });
+    const { client, harness } = await startPickedCalibration(
+      engine,
+      raster,
+      "rotated.png",
+    );
+
+    await screen.findByText("建议：硬边像素图 · 置信度 94%");
+    setGridDimensions(2, 3);
+    fireEvent.click(
+      screen.getByRole("button", { name: "旋转 90°" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "图中没有空位" }),
+    );
+    await recognizeAndOpenEditor();
+
+    await returnToCalibration();
+    expect(
+      screen.getByRole("spinbutton", { name: "行数" }),
+    ).toHaveValue(2);
+    expect(
+      screen.getByRole("spinbutton", { name: "列数" }),
+    ).toHaveValue(3);
+    await recognizeAndOpenEditor();
+
+    expect(engine.recognitionRequests).toHaveLength(2);
+    expect(engine.recognitionRequests.map(({ rows, columns }) => ({
+      rows,
+      columns,
+    }))).toEqual([
+      { rows: 2, columns: 3 },
+      { rows: 2, columns: 3 },
+    ]);
+    client.close();
+    harness.close();
+  });
+
+  it("discards staged crop and grid edits when returning to the editor", async () => {
+    const raster = sourceRaster(30, 20);
+    const engine = new FakeEngine({
+      recognitions: [recognitionResult(2, 2)],
+    });
+    const { client, harness } = await startPickedCalibration(
+      engine,
+      raster,
+      "rollback.png",
+    );
+
+    await screen.findByText("建议：硬边像素图 · 置信度 94%");
+    await openCropAndSet({ x: 5, y: 0, width: 20, height: 20 });
+    setGridDimensions(2, 2);
+    fireEvent.click(
+      screen.getByRole("button", { name: "图中没有空位" }),
+    );
+    await recognizeAndOpenEditor();
+
+    await returnToCalibration();
+    await openCropAndSet({ x: 0, y: 0, width: 10, height: 20 });
+    setGridDimensions(2, 1);
+    await returnToEditor();
+
+    await returnToCalibration();
+    expect(
+      screen.getByRole("spinbutton", { name: "行数" }),
+    ).toHaveValue(2);
+    expect(
+      screen.getByRole("spinbutton", { name: "列数" }),
+    ).toHaveValue(2);
+    await expectCrop({ x: 5, y: 0, width: 20, height: 20 });
+    client.close();
+    harness.close();
+  });
+
+  it("rolls back a rejected recalibration without mutating the committed project", async () => {
+    const raster = sourceRaster(30, 20);
+    const project = projectWithSource();
+    const recognition = deferred<RecognitionResult>();
+    const engine = new FakeEngine({
+      recognitions: [recognition.promise],
+    });
+    const { client, harness } = await startRestoredEditor(
+      project,
+      engine,
+      raster,
+    );
+    await waitFor(() => {
+      expect(harness.savedProjects().at(-1)?.project).toBeDefined();
+    });
+    const committed = harness.savedProjects().at(-1)?.project;
+
+    await returnToCalibration();
+    await openCropAndSet({ x: 0, y: 0, width: 10, height: 20 });
+    setGridDimensions(2, 1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "图中没有空位" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "识别拼豆矩阵" }),
+    );
+    await act(async () => {
+      recognition.reject(new Error("recognition failed"));
+      await recognition.promise.catch(() => undefined);
+    });
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "编辑拼豆矩阵",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "本地图像处理失败。项目仍在本机，请重试当前步骤。",
+      ),
+    ).toBeInTheDocument();
+    expect(harness.savedProjects().at(-1)?.project).toEqual(
+      committed,
+    );
+    expect(committed).toMatchObject({
+      projectId: project.projectId,
+      cells: project.cells,
+      beadPitchMm: 3.1,
+      compression: 77,
+      printMapping: project.printMapping,
+      calibration: {
+        crop: { x: 5, y: 0, width: 20, height: 20 },
+      },
+    });
+
+    await returnToCalibration();
+    await expectCrop({ x: 5, y: 0, width: 20, height: 20 });
+    client.close();
+    harness.close();
+  });
+
+  it("atomically replaces a recalibrated project and preserves full undo and redo checkpoints", async () => {
+    const raster = sourceRaster(30, 20);
+    const oldUpdatedAt = "2099-01-01T00:00:00.000Z";
+    const project = projectWithSource({ updatedAt: oldUpdatedAt });
+    const replacement = recognitionResult(1, 3);
+    const engine = new FakeEngine({
+      recognitions: [replacement],
+    });
+    const { client, harness } = await startRestoredEditor(
+      project,
+      engine,
+      raster,
+    );
+
+    await returnToCalibration();
+    await recognizeAndOpenEditor();
+    await waitFor(() => {
+      expect(harness.savedProjects().at(-1)?.project).toMatchObject({
+        rows: 1,
+        columns: 3,
+        cells: replacement.cells,
+        printMapping: null,
+      });
+    });
+    const savedReplacement = harness.savedProjects().at(-1)
+      ?.project as BeadProject;
+    expect(savedReplacement).toMatchObject({
+      projectId: project.projectId,
+      createdAt: project.createdAt,
+      beadPitchMm: project.beadPitchMm,
+      compression: project.compression,
+      cells: replacement.cells,
+      source: {
+        fileName: "restored.png",
+        pixelWidth: 30,
+        pixelHeight: 20,
+      },
+      printMapping: null,
+    });
+    expect(savedReplacement.updatedAt).toBe(
+      "2099-01-01T00:00:00.001Z",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await waitFor(() => {
+      expect(harness.savedProjects().at(-1)?.project).toMatchObject({
+        rows: project.rows,
+        columns: project.columns,
+        cells: project.cells,
+        printMapping: project.printMapping,
+      });
+    });
+    const undone = harness.savedProjects().at(-1)
+      ?.project as BeadProject;
+    expect({
+      ...undone,
+      source: undefined,
+      updatedAt: undefined,
+    }).toMatchObject({
+      ...project,
+      source: undefined,
+      updatedAt: undefined,
+    });
+    expect(undone.updatedAt).toBe(savedReplacement.updatedAt);
+
+    fireEvent.click(screen.getByRole("button", { name: "重做" }));
+    await waitFor(() => {
+      expect(harness.savedProjects().at(-1)?.project).toMatchObject({
+        rows: 1,
+        columns: 3,
+        cells: replacement.cells,
+        printMapping: null,
+      });
+    });
+    const redone = harness.savedProjects().at(-1)
+      ?.project as BeadProject;
+    expect(redone.projectId).toBe(project.projectId);
+    expect(redone.createdAt).toBe(project.createdAt);
+    expect(redone.updatedAt).toBe(savedReplacement.updatedAt);
+    const saveTimes = harness
+      .savedProjects()
+      .map((record) => Date.parse(record.updatedAt));
+    expect(
+      saveTimes.every(
+        (timestamp, index) =>
+          index === 0 || timestamp >= saveTimes[index - 1],
+      ),
+    ).toBe(true);
+    client.close();
+    harness.close();
+  });
+
+  it.each(["resolve", "reject"] as const)(
+    "keeps a newer classification authoritative when an old task %s arrives late",
+    async (settlement) => {
+      const raster = sourceRaster(30, 20);
+      const project = projectWithSource();
+      const oldClassification = deferred<PatternClassification>();
+      const newClassification = deferred<PatternClassification>();
+      const engine = new FakeEngine({
+        classifications: [
+          oldClassification.promise,
+          newClassification.promise,
+        ],
+      });
+      const { client, harness } = await startRestoredEditor(
+        project,
+        engine,
+        raster,
+      );
+
+      await returnToCalibration();
+      expect(
+        screen.getByText("正在分析图纸类型…"),
+      ).toBeInTheDocument();
+      const returnButton = screen.getByRole("button", {
+        name: "返回编辑器",
+      });
+      expect(returnButton).toBeEnabled();
+      fireEvent.click(returnButton);
+      await screen.findByRole("heading", {
+        name: "编辑拼豆矩阵",
+      });
+      await returnToCalibration();
+      expect(
+        screen.getByText("正在分析图纸类型…"),
+      ).toBeInTheDocument();
+
+      await act(async () => {
+        if (settlement === "resolve") {
+          oldClassification.resolve({
+            mode: "numbered-grid",
+            confidence: 0.99,
+            scores: {
+              "numbered-grid": 0.99,
+              "hard-pixel": 0.01,
+              "ring-preview": 0,
+            },
+          });
+          await oldClassification.promise;
+        } else {
+          oldClassification.reject(new Error("stale classifier"));
+          await oldClassification.promise.catch(() => undefined);
+        }
+      });
+      expect(
+        screen.getByText("正在分析图纸类型…"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(
+          "本地图像处理失败。项目仍在本机，请重试当前步骤。",
+        ),
+      ).not.toBeInTheDocument();
+      expect(
+        harness.payloads("status.progress").at(-1),
+      ).not.toBeNull();
+
+      await act(async () => {
+        newClassification.resolve({
+          mode: "ring-preview",
+          confidence: 0.88,
+          scores: {
+            "numbered-grid": 0.02,
+            "hard-pixel": 0.1,
+            "ring-preview": 0.88,
+          },
+        });
+        await newClassification.promise;
+      });
+      expect(
+        await screen.findByText(
+          "建议：圆豆俯视图 · 置信度 88%",
+        ),
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          harness.payloads("status.progress").at(-1),
+        ).toBeNull();
+      });
+      client.close();
+      harness.close();
+    },
+  );
+
+  it("keeps classification failure neutral while recognition has its own progress state", async () => {
+    const raster = sourceRaster(30, 20);
+    const classification = deferred<PatternClassification>();
+    const recognition = deferred<RecognitionResult>();
+    const engine = new FakeEngine({
+      classifications: [classification.promise],
+      recognitions: [recognition.promise],
+    });
+    const { client, harness } = await startPickedCalibration(
+      engine,
+      raster,
+      "manual-confirmation.png",
+    );
+
+    expect(
+      screen.getByText("正在分析图纸类型…"),
+    ).toBeInTheDocument();
+    await act(async () => {
+      classification.reject(new Error("classification unavailable"));
+      await classification.promise.catch(() => undefined);
+    });
+    expect(
+      await screen.findByText(
+        "未能自动判断图纸类型，请手动确认。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "本地图像处理失败。项目仍在本机，请重试当前步骤。",
+      ),
+    ).not.toBeInTheDocument();
+
+    setGridDimensions(2, 3);
+    fireEvent.click(
+      screen.getByRole("button", { name: "图中没有空位" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "识别拼豆矩阵" }),
+    );
+    expect(
+      screen.getByText(
+        "未能自动判断图纸类型，请手动确认。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("正在分析图纸类型…"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "正在识别拼豆矩阵…",
+      }),
+    ).toBeDisabled();
+
+    await act(async () => {
+      recognition.resolve(recognitionResult(2, 2));
+      await recognition.promise;
+    });
+    expect(
+      await screen.findByRole("heading", {
+        name: "编辑拼豆矩阵",
+      }),
+    ).toBeInTheDocument();
     client.close();
     harness.close();
   });
@@ -279,6 +1066,9 @@ describe("BeadWorkshopModule", () => {
       await screen.findByRole("heading", { name: "编辑拼豆矩阵" }),
     ).toBeInTheDocument();
     expect(screen.getByText("已恢复本机项目")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "返回校准" }),
+    ).not.toBeInTheDocument();
     await waitFor(() => {
       expect(harness.methods()).toContain("lifecycle.ready");
     });

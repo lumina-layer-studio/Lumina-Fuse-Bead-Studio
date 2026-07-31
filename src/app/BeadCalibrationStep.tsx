@@ -38,6 +38,7 @@ interface BeadCalibrationStepProps {
   classification: PatternClassification | null;
   draft: BeadCalibrationDraft;
   busy: boolean;
+  classificationBusy?: boolean;
   translate(key: string): string;
   onChange(next: BeadCalibrationDraft): void;
   onRecognize(): void;
@@ -79,6 +80,7 @@ export function BeadCalibrationStep({
   classification,
   draft,
   busy,
+  classificationBusy = false,
   translate: t,
   onChange,
   onRecognize,
@@ -90,7 +92,10 @@ export function BeadCalibrationStep({
     useState<CalibrationPickMode>("none");
   const validGrid = isValidGrid(draft);
   const canRecognize =
-    validGrid && draft.emptySelection !== null && !busy;
+    validGrid &&
+    draft.emptySelection !== null &&
+    !busy &&
+    !classificationBusy;
 
   const updateDimensions = (rows: number, columns: number) => {
     const safeRows = clampDimension(rows);
@@ -162,7 +167,7 @@ export function BeadCalibrationStep({
         mode: t(`workshop.bead.mode.${classification.mode}`),
         confidence: Math.round(classification.confidence * 100),
       })
-    : busy
+    : classificationBusy
       ? t("workshop.bead.classifying")
       : t("workshop.bead.classificationUnavailable");
 
@@ -187,6 +192,7 @@ export function BeadCalibrationStep({
                 <Button
                   label={t("workshop.bead.cropPattern")}
                   variant="secondary"
+                  disabled={busy || classificationBusy}
                   onClick={onOpenCrop}
                 />
               ) : null}

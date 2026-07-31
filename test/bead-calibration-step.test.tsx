@@ -51,12 +51,14 @@ function Harness({
   onRecognize = vi.fn(),
   onReturnToEditor,
   busy = false,
+  classificationBusy = false,
   classification,
 }: {
   draft?: BeadCalibrationDraft;
   onRecognize?: () => void;
   onReturnToEditor?: () => void;
   busy?: boolean;
+  classificationBusy?: boolean;
   classification?: PatternClassification | null;
 }) {
   const [value, setValue] = useState(draft);
@@ -79,6 +81,7 @@ function Harness({
       }
       draft={value}
       busy={busy}
+      classificationBusy={classificationBusy}
       translate={t}
       onChange={setValue}
       onRecognize={onRecognize}
@@ -210,7 +213,34 @@ describe("BeadCalibrationStep", () => {
     expect(onReturnToEditor).toHaveBeenCalledTimes(1);
   });
 
-  it("distinguishes unavailable classification from active analysis", () => {
+  it("allows classification cancellation but blocks crop and recognition until it settles", () => {
+    const onReturnToEditor = vi.fn();
+    render(
+      <Harness
+        classification={null}
+        classificationBusy
+        onReturnToEditor={onReturnToEditor}
+      />,
+    );
+
+    expect(
+      screen.getByText("正在分析图纸类型…"),
+    ).toBeInTheDocument();
+    const returnButton = screen.getByRole("button", {
+      name: "返回编辑器",
+    });
+    expect(returnButton).toBeEnabled();
+    fireEvent.click(returnButton);
+    expect(onReturnToEditor).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "裁剪图案" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "识别拼豆矩阵" }),
+    ).toBeDisabled();
+  });
+
+  it("distinguishes unavailable classification from recognition progress", () => {
     const { rerender } = render(
       <Harness classification={null} />,
     );
@@ -226,12 +256,17 @@ describe("BeadCalibrationStep", () => {
 
     rerender(<Harness busy classification={null} />);
     expect(
-      screen.getByText("正在分析图纸类型…"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(
+      screen.getByText(
         "未能自动判断图纸类型，请手动确认。",
       ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("正在分析图纸类型…"),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "正在识别拼豆矩阵…",
+      }),
+    ).toBeDisabled();
   });
 });
