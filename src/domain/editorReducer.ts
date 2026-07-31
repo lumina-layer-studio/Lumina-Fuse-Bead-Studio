@@ -217,6 +217,77 @@ function issuePatchesForCells(
   );
 }
 
+function cloneBeadProject(project: BeadProject): BeadProject {
+  return validateBeadProject({
+    ...project,
+    source: project.source
+      ? {
+          ...project.source,
+          blob: project.source.blob,
+        }
+      : null,
+    calibration: {
+      ...project.calibration,
+      crop: project.calibration.crop
+        ? { ...project.calibration.crop }
+        : null,
+      origin: { ...project.calibration.origin },
+      orientation: { ...project.calibration.orientation },
+      emptySelection: {
+        ...project.calibration.emptySelection,
+      },
+    },
+    palette: project.palette.map(
+      (color) => [...color] as RgbColor,
+    ),
+    cells: project.cells.map((cell) => ({ ...cell })),
+    confidenceIssues: project.confidenceIssues.map((issue) => ({
+      ...issue,
+      reasons: [...issue.reasons],
+    })),
+    ...(project.printMapping
+      ? {
+          printMapping: {
+            ...project.printMapping,
+            entries: project.printMapping.entries.map((entry) => ({
+              ...entry,
+            })),
+          },
+        }
+      : {}),
+  });
+}
+
+function latestProjectUpdatedAt(
+  currentUpdatedAt: string,
+  targetUpdatedAt: string,
+): string {
+  const currentTime = Date.parse(currentUpdatedAt);
+  const targetTime = Date.parse(targetUpdatedAt);
+  if (!Number.isFinite(currentTime)) {
+    return targetUpdatedAt;
+  }
+  if (!Number.isFinite(targetTime)) {
+    return currentUpdatedAt;
+  }
+  return targetTime > currentTime
+    ? targetUpdatedAt
+    : currentUpdatedAt;
+}
+
+function applyProjectSnapshot(
+  current: BeadProject,
+  target: BeadProject,
+): BeadProject {
+  return validateBeadProject({
+    ...cloneBeadProject(target),
+    updatedAt: latestProjectUpdatedAt(
+      current.updatedAt,
+      target.updatedAt,
+    ),
+  });
+}
+
 function applyHistoryEntry(
   project: BeadProject,
   entry: BeadEditHistoryEntry,
@@ -227,10 +298,7 @@ function applyHistoryEntry(
       direction === "forward"
         ? entry.afterProject
         : entry.beforeProject;
-    return validateBeadProject({
-      ...target,
-      updatedAt: project.updatedAt,
-    });
+    return applyProjectSnapshot(project, target);
   }
 
   const cells = project.cells.slice();
@@ -259,16 +327,57 @@ function applyHistoryEntry(
   });
 }
 
+function projectSelection(
+  project: BeadProject,
+): Pick<
+  BeadEditorState,
+  | "activePaletteIndex"
+  | "selectedCellIndex"
+  | "selectedIssueIndex"
+> {
+  const selectedIssueIndex = project.confidenceIssues.findIndex(
+    (issue) => !issue.resolved,
+  );
+  return {
+    activePaletteIndex: 0,
+    selectedCellIndex:
+      selectedIssueIndex >= 0
+        ? project.confidenceIssues[selectedIssueIndex].cellIndex
+        : null,
+    selectedIssueIndex:
+      selectedIssueIndex >= 0 ? selectedIssueIndex : null,
+  };
+}
+
+function normalizeProjectState(
+  state: BeadEditorState,
+  present: BeadProject,
+): BeadEditorState {
+  return {
+    ...state,
+    present,
+    ...projectSelection(present),
+  };
+}
+
 function commitHistoryEntry(
   state: BeadEditorState,
   entry: BeadEditHistoryEntry,
 ): BeadEditorState {
-  return {
+  const present = applyHistoryEntry(
+    state.present,
+    entry,
+    "forward",
+  );
+  const nextState = {
     ...state,
-    present: applyHistoryEntry(state.present, entry, "forward"),
+    present,
     past: [...state.past, entry],
     future: [],
   };
+  return entry.kind === "project"
+    ? normalizeProjectState(nextState, present)
+    : nextState;
 }
 
 function applyEyedropper(
@@ -296,21 +405,12 @@ export function createBeadEditorState(
   project: BeadProject,
 ): BeadEditorState {
   const present = validateBeadProject(project);
-  const selectedIssueIndex = present.confidenceIssues.findIndex(
-    (issue) => !issue.resolved,
-  );
   return {
     present,
     past: [],
     future: [],
     activeTool: "paint",
-    activePaletteIndex: 0,
-    selectedCellIndex:
-      selectedIssueIndex >= 0
-        ? present.confidenceIssues[selectedIssueIndex].cellIndex
-        : null,
-    selectedIssueIndex:
-      selectedIssueIndex >= 0 ? selectedIssueIndex : null,
+    ...projectSelection(present),
   };
 }
 
@@ -431,26 +531,11 @@ export function beadEditorReducer(
   }
   if (action.type === "replace-project") {
     const replacement = validateBeadProject(action.project);
-    const nextState = commitHistoryEntry(state, {
+    return commitHistoryEntry(state, {
       kind: "project",
-      beforeProject: state.present,
-      afterProject: replacement,
+      beforeProject: cloneBeadProject(state.present),
+      afterProject: cloneBeadProject(replacement),
     });
-    const selectedIssueIndex =
-      nextState.present.confidenceIssues.findIndex(
-        (issue) => !issue.resolved,
-      );
-    return {
-      ...nextState,
-      activePaletteIndex: 0,
-      selectedCellIndex:
-        selectedIssueIndex >= 0
-          ? nextState.present.confidenceIssues[selectedIssueIndex]
-              .cellIndex
-          : null,
-      selectedIssueIndex:
-        selectedIssueIndex >= 0 ? selectedIssueIndex : null,
-    };
   }
   if (action.type === "select-cell") {
     if (
@@ -480,33 +565,75 @@ export function beadEditorReducer(
   }
   if (action.type === "undo") {
     const entry = state.past[state.past.length - 1];
-    return entry
-      ? {
+    if (!entry) {
+      return state;
+    }
+    if (entry.kind === "project") {
+      const movingEntry: BeadProjectHistoryEntry = {
+        ...entry,
+        afterProject: cloneBeadProject(state.present),
+      };
+      const present = applyHistoryEntry(
+        state.present,
+        movingEntry,
+        "backward",
+      );
+      return normalizeProjectState(
+        {
           ...state,
-          present: applyHistoryEntry(
-            state.present,
-            entry,
-            "backward",
-          ),
+          present,
           past: state.past.slice(0, -1),
-          future: [entry, ...state.future],
-        }
-      : state;
+          future: [movingEntry, ...state.future],
+        },
+        present,
+      );
+    }
+    return {
+      ...state,
+      present: applyHistoryEntry(
+        state.present,
+        entry,
+        "backward",
+      ),
+      past: state.past.slice(0, -1),
+      future: [entry, ...state.future],
+    };
   }
   if (action.type === "redo") {
     const entry = state.future[0];
-    return entry
-      ? {
+    if (!entry) {
+      return state;
+    }
+    if (entry.kind === "project") {
+      const movingEntry: BeadProjectHistoryEntry = {
+        ...entry,
+        beforeProject: cloneBeadProject(state.present),
+      };
+      const present = applyHistoryEntry(
+        state.present,
+        movingEntry,
+        "forward",
+      );
+      return normalizeProjectState(
+        {
           ...state,
-          present: applyHistoryEntry(
-            state.present,
-            entry,
-            "forward",
-          ),
-          past: [...state.past, entry],
+          present,
+          past: [...state.past, movingEntry],
           future: state.future.slice(1),
-        }
-      : state;
+        },
+        present,
+      );
+    }
+    return {
+      ...state,
+      present: applyHistoryEntry(
+        state.present,
+        entry,
+        "forward",
+      ),
+      past: [...state.past, entry],
+      future: state.future.slice(1),
+    };
   }
   if (action.type === "set-issue-resolved") {
     const issue = state.present.confidenceIssues[action.issueIndex];

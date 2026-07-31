@@ -149,6 +149,52 @@ function makeRecognitionReplacement(): BeadProject {
   });
 }
 
+function makeHighIndexReplacement(): BeadProject {
+  return createBeadProject({
+    projectId: "editor",
+    moduleVersion: "1.0.0",
+    now: RECOGNITION_NOW,
+    rows: 2,
+    columns: 4,
+    palette: [
+      [12, 34, 56],
+      [78, 90, 12],
+      [34, 56, 78],
+      [90, 12, 34],
+    ],
+    cells: [
+      { kind: "empty" },
+      { kind: "color", paletteIndex: 0 },
+      { kind: "color", paletteIndex: 1 },
+      { kind: "color", paletteIndex: 2 },
+      { kind: "color", paletteIndex: 3 },
+      { kind: "empty" },
+      { kind: "transparent-support" },
+      { kind: "empty" },
+    ],
+    confidenceIssues: [
+      {
+        cellIndex: 1,
+        confidence: 0.61,
+        reasons: ["high-color-variance"],
+        resolved: true,
+      },
+      {
+        cellIndex: 6,
+        confidence: 0.33,
+        reasons: ["grid-misalignment"],
+        resolved: false,
+      },
+      {
+        cellIndex: 7,
+        confidence: 0.29,
+        reasons: ["jpeg-near-tie"],
+        resolved: false,
+      },
+    ],
+  });
+}
+
 describe("bead editor reducer", () => {
   it("focuses the first unresolved confidence issue on entry", () => {
     const current = makeProject();
@@ -398,8 +444,236 @@ describe("bead editor reducer", () => {
     if (!historyEntry || historyEntry.kind !== "project") {
       throw new Error("Expected a project history entry.");
     }
-    expect(historyEntry.beforeProject).toBe(original);
-    expect(historyEntry.afterProject).toBe(replacement);
+    expect(historyEntry.beforeProject).toEqual(original);
+    expect(historyEntry.beforeProject).not.toBe(original);
+    expect(historyEntry.afterProject).toEqual(replacement);
+    expect(historyEntry.afterProject).not.toBe(replacement);
+  });
+
+  it("deeply isolates project checkpoints from caller and present mutations", () => {
+    const original = makeCheckpointProject();
+    const sourceBlob = new Blob(["recognition-source"], {
+      type: "image/png",
+    });
+    const replacement: BeadProject = {
+      ...makeRecognitionReplacement(),
+      source: {
+        fileName: "recognition.png",
+        mimeType: "image/png",
+        blob: sourceBlob,
+        pixelWidth: 300,
+        pixelHeight: 200,
+      },
+    };
+    let state = createBeadEditorState(original);
+
+    state = beadEditorReducer(state, {
+      type: "replace-project",
+      project: replacement,
+    });
+    const storedEntry = state.past[0];
+    if (!storedEntry || storedEntry.kind !== "project") {
+      throw new Error("Expected a project history entry.");
+    }
+    expect(storedEntry.beforeProject).not.toBe(original);
+    expect(storedEntry.afterProject).not.toBe(replacement);
+    expect(storedEntry.afterProject.source).not.toBe(
+      replacement.source,
+    );
+    expect(storedEntry.afterProject.source?.blob).toBe(sourceBlob);
+    expect(storedEntry.afterProject.calibration).not.toBe(
+      replacement.calibration,
+    );
+    expect(storedEntry.afterProject.calibration.crop).not.toBe(
+      replacement.calibration.crop,
+    );
+    expect(storedEntry.afterProject.calibration.origin).not.toBe(
+      replacement.calibration.origin,
+    );
+    expect(storedEntry.afterProject.calibration.orientation).not.toBe(
+      replacement.calibration.orientation,
+    );
+    expect(
+      storedEntry.afterProject.calibration.emptySelection,
+    ).not.toBe(replacement.calibration.emptySelection);
+    expect(storedEntry.afterProject.palette).not.toBe(
+      replacement.palette,
+    );
+    expect(storedEntry.afterProject.palette[0]).not.toBe(
+      replacement.palette[0],
+    );
+    expect(storedEntry.afterProject.cells).not.toBe(
+      replacement.cells,
+    );
+    expect(storedEntry.afterProject.cells[0]).not.toBe(
+      replacement.cells[0],
+    );
+    expect(storedEntry.afterProject.confidenceIssues[0]).not.toBe(
+      replacement.confidenceIssues[0],
+    );
+    expect(
+      storedEntry.afterProject.confidenceIssues[0].reasons,
+    ).not.toBe(replacement.confidenceIssues[0].reasons);
+    expect(storedEntry.afterProject.printMapping).not.toBe(
+      replacement.printMapping,
+    );
+    expect(
+      storedEntry.afterProject.printMapping?.entries[0],
+    ).not.toBe(replacement.printMapping?.entries[0]);
+    expect(state.present.palette).not.toBe(
+      storedEntry.afterProject.palette,
+    );
+
+    replacement.source!.fileName = "mutated.png";
+    replacement.calibration.crop!.x = 99;
+    replacement.calibration.origin.x = 98;
+    replacement.calibration.orientation.rotation = 270;
+    replacement.calibration.emptySelection = {
+      kind: "sample",
+      cellIndex: 5,
+    };
+    replacement.palette[0][0] = 97;
+    replacement.cells[0] = { kind: "color", paletteIndex: 0 };
+    replacement.confidenceIssues[0].reasons[0] =
+      "jpeg-near-tie";
+    replacement.printMapping!.entries[0].colorEntryId =
+      "mutated-mapping";
+    original.palette[0][0] = 1;
+    original.cells[0] = { kind: "empty" };
+    original.calibration.origin.x = 96;
+    original.printMapping!.entries[0].colorEntryId =
+      "mutated-original";
+
+    expect(state.present.source?.fileName).toBe("recognition.png");
+    expect(state.present.calibration.crop?.x).toBe(1);
+    expect(state.present.calibration.origin.x).toBe(5);
+    expect(state.present.calibration.orientation.rotation).toBe(180);
+    expect(state.present.calibration.emptySelection).toEqual({
+      kind: "sample",
+      cellIndex: 0,
+    });
+    expect(state.present.palette[0][0]).toBe(12);
+    expect(state.present.cells[0]).toEqual({ kind: "empty" });
+    expect(
+      state.present.confidenceIssues[0].reasons[0],
+    ).toBe("high-color-variance");
+    expect(
+      state.present.printMapping?.entries[0].colorEntryId,
+    ).toBe("replacement-gray");
+    expect(storedEntry.afterProject.palette[0][0]).toBe(12);
+
+    state = beadEditorReducer(state, { type: "undo" });
+    expect(state.present.palette[0][0]).toBe(230);
+    expect(state.present.cells[0]).toEqual({
+      kind: "color",
+      paletteIndex: 0,
+    });
+    expect(state.present.calibration.origin.x).toBe(2);
+    expect(
+      state.present.printMapping?.entries[0].colorEntryId,
+    ).toBe("original-red");
+    const futureEntry = state.future[0];
+    if (!futureEntry || futureEntry.kind !== "project") {
+      throw new Error("Expected a project history entry.");
+    }
+    state.present.palette[0][0] = 201;
+    state.present.calibration.origin.x = 42;
+    expect(futureEntry.beforeProject.palette[0][0]).toBe(230);
+    expect(futureEntry.beforeProject.calibration.origin.x).toBe(2);
+
+    state = beadEditorReducer(state, { type: "redo" });
+    expect(state.present.palette[0][0]).toBe(12);
+    expect(state.present.calibration.origin.x).toBe(5);
+    const pastEntry = state.past[0];
+    if (!pastEntry || pastEntry.kind !== "project") {
+      throw new Error("Expected a project history entry.");
+    }
+    state.present.palette[0][0] = 202;
+    state.present.calibration.origin.x = 43;
+    expect(pastEntry.afterProject.palette[0][0]).toBe(12);
+    expect(pastEntry.afterProject.calibration.origin.x).toBe(5);
+  });
+
+  it("preserves non-history replacement edits across checkpoint undo and redo", () => {
+    let state = createBeadEditorState(makeCheckpointProject());
+    state = beadEditorReducer(state, {
+      type: "replace-project",
+      project: makeRecognitionReplacement(),
+    });
+    state = beadEditorReducer(state, {
+      type: "set-compression",
+      compression: 88,
+      updatedAt: "2026-07-30T02:00:00.000Z",
+    });
+    state = beadEditorReducer(state, {
+      type: "set-bead-pitch",
+      beadPitchMm: 3.1,
+    });
+    state = beadEditorReducer(state, {
+      type: "add-palette-color",
+      color: [210, 180, 140],
+    });
+    state = beadEditorReducer(state, {
+      type: "set-print-mapping",
+      printMapping: {
+        libraryId: "edited-library",
+        libraryLabel: "Edited library",
+        entries: [
+          {
+            sourcePaletteIndex: 0,
+            colorEntryId: "edited-gray",
+          },
+          {
+            sourcePaletteIndex: 1,
+            colorEntryId: "edited-sand",
+          },
+        ],
+      },
+    });
+    const editedReplacement = structuredClone(state.present);
+
+    state = beadEditorReducer(state, { type: "undo" });
+    state = beadEditorReducer(state, { type: "redo" });
+
+    expect(state.present).toEqual(editedReplacement);
+    expect(state.present.compression).toBe(88);
+    expect(state.present.beadPitchMm).toBe(3.1);
+    expect(state.present.palette.at(-1)).toEqual([210, 180, 140]);
+    expect(state.present.printMapping).toEqual({
+      libraryId: "edited-library",
+      libraryLabel: "Edited library",
+      entries: [
+        {
+          sourcePaletteIndex: 0,
+          colorEntryId: "edited-gray",
+        },
+        {
+          sourcePaletteIndex: 1,
+          colorEntryId: "edited-sand",
+        },
+      ],
+    });
+  });
+
+  it("preserves non-history original edits across redo and the next undo", () => {
+    let state = createBeadEditorState(makeCheckpointProject());
+    state = beadEditorReducer(state, {
+      type: "replace-project",
+      project: makeRecognitionReplacement(),
+    });
+    state = beadEditorReducer(state, { type: "undo" });
+    state = beadEditorReducer(state, {
+      type: "set-compression",
+      compression: 73,
+      updatedAt: "2026-07-30T03:00:00.000Z",
+    });
+    const editedOriginal = structuredClone(state.present);
+
+    state = beadEditorReducer(state, { type: "redo" });
+    state = beadEditorReducer(state, { type: "undo" });
+
+    expect(state.present).toEqual(editedOriginal);
+    expect(state.present.compression).toBe(73);
   });
 
   it("undoes and redoes complete project checkpoints without regressing updatedAt", () => {
@@ -424,6 +698,88 @@ describe("bead editor reducer", () => {
       ...replacement,
       updatedAt: NOW,
     });
+  });
+
+  it("keeps the latest project timestamp across replace undo and redo", () => {
+    const cases = [
+      {
+        replacementUpdatedAt: RECOGNITION_NOW,
+        expectedUpdatedAt: NOW,
+      },
+      {
+        replacementUpdatedAt: NOW,
+        expectedUpdatedAt: NOW,
+      },
+      {
+        replacementUpdatedAt: "2026-07-31T00:00:00.000Z",
+        expectedUpdatedAt: "2026-07-31T00:00:00.000Z",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const replacement: BeadProject = {
+        ...makeRecognitionReplacement(),
+        updatedAt: testCase.replacementUpdatedAt,
+      };
+      let state = createBeadEditorState(makeCheckpointProject());
+
+      state = beadEditorReducer(state, {
+        type: "replace-project",
+        project: replacement,
+      });
+      expect(state.present.updatedAt).toBe(
+        testCase.expectedUpdatedAt,
+      );
+
+      state = beadEditorReducer(state, { type: "undo" });
+      expect(state.present.updatedAt).toBe(
+        testCase.expectedUpdatedAt,
+      );
+
+      state = beadEditorReducer(state, { type: "redo" });
+      expect(state.present.updatedAt).toBe(
+        testCase.expectedUpdatedAt,
+      );
+    }
+  });
+
+  it("normalizes project-specific palette and issue focus across checkpoint undo and redo", () => {
+    const original = makeCheckpointProject();
+    const replacement = makeHighIndexReplacement();
+    let state = createBeadEditorState(original);
+
+    state = beadEditorReducer(state, {
+      type: "replace-project",
+      project: replacement,
+    });
+    state = beadEditorReducer(state, {
+      type: "set-palette",
+      paletteIndex: 3,
+    });
+    state = beadEditorReducer(state, {
+      type: "select-issue",
+      issueIndex: 2,
+    });
+
+    state = beadEditorReducer(state, { type: "undo" });
+    expect(state.present.rows).toBe(original.rows);
+    expect(state.activePaletteIndex).toBe(0);
+    expect(state.selectedIssueIndex).toBe(0);
+    expect(state.selectedCellIndex).toBe(3);
+
+    state = beadEditorReducer(state, {
+      type: "set-palette",
+      paletteIndex: 1,
+    });
+    state = beadEditorReducer(state, {
+      type: "select-cell",
+      cellIndex: 11,
+    });
+    state = beadEditorReducer(state, { type: "redo" });
+    expect(state.present.rows).toBe(replacement.rows);
+    expect(state.activePaletteIndex).toBe(0);
+    expect(state.selectedIssueIndex).toBe(1);
+    expect(state.selectedCellIndex).toBe(6);
   });
 
   it("keeps patch history safe across a project checkpoint boundary", () => {
