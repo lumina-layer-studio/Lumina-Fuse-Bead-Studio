@@ -24,6 +24,7 @@ describe("bead recipe compatibility", () => {
     expect(createBeadRecipeSource(restored).payload).toEqual(
       source.payload,
     );
+    expect(restored.irregularity).toBe(0);
   });
 
   it.each([
@@ -39,6 +40,7 @@ describe("bead recipe compatibility", () => {
     ],
     ["pitch", { payload: { beadPitchMm: 0.1 } }],
     ["compression", { payload: { compression: 101 } }],
+    ["irregularity", { payload: { irregularity: 101 } }],
   ])("rejects invalid %s data", async (_label, patch) => {
     const source = await fixture();
     const candidate = {

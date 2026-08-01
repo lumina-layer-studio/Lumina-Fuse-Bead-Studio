@@ -77,6 +77,11 @@ export type BeadEditorAction =
       updatedAt?: string;
     }
   | {
+      type: "set-irregularity";
+      irregularity: number;
+      updatedAt?: string;
+    }
+  | {
       type: "set-bead-pitch";
       beadPitchMm: number;
       updatedAt?: string;
@@ -451,6 +456,24 @@ export function beadEditorReducer(
       present: validateBeadProject({
         ...state.present,
         compression: action.compression,
+        updatedAt: action.updatedAt ?? state.present.updatedAt,
+      }),
+    };
+  }
+  if (action.type === "set-irregularity") {
+    if (
+      !Number.isInteger(action.irregularity) ||
+      action.irregularity < 0 ||
+      action.irregularity > 100 ||
+      action.irregularity === (state.present.irregularity ?? 0)
+    ) {
+      return state;
+    }
+    return {
+      ...state,
+      present: validateBeadProject({
+        ...state.present,
+        irregularity: action.irregularity,
         updatedAt: action.updatedAt ?? state.present.updatedAt,
       }),
     };

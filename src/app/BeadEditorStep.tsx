@@ -24,6 +24,7 @@ import {
   workstationInputClass,
 } from "../ui/panelPrimitives";
 import { BeadMatrixCanvas } from "./BeadMatrixCanvas";
+import { BeadFusionPreview } from "./BeadFusionPreview";
 import { BeadSourceCanvas } from "./BeadSourceCanvas";
 
 type EditorView = "original" | "matrix" | "pressure";
@@ -477,6 +478,23 @@ export function BeadEditorStep({
             ))}
           </div>
 
+          <Slider
+            label={t("workshop.bead.irregularity")}
+            tooltip={t("workshop.bead.irregularityHint")}
+            value={project.irregularity ?? 0}
+            min={0}
+            max={100}
+            step={1}
+            unit="%"
+            onChange={(irregularity) =>
+              dispatch({
+                type: "set-irregularity",
+                irregularity,
+                updatedAt: new Date().toISOString(),
+              })
+            }
+          />
+
           <label className="field">
             <span className="label-with-help">
               <span className="field-label">
@@ -570,11 +588,8 @@ export function BeadEditorStep({
                 ariaLabel={t("workshop.bead.originalCanvas")}
               />
             ) : view === "pressure" ? (
-              <BeadMatrixCanvas
+              <BeadFusionPreview
                 project={displayProject}
-                renderResult={renderResult}
-                showGrid={false}
-                selectedCellIndex={state.selectedCellIndex}
                 ariaLabel={t("workshop.bead.pressureCanvas")}
               />
             ) : (

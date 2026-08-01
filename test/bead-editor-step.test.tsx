@@ -135,9 +135,12 @@ describe("BeadEditorStep", () => {
       screen.getByRole("img", { name: "可编辑拼豆矩阵" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "压合预览" }));
-    expect(
-      screen.getByRole("img", { name: "拼豆压合预览" }),
-    ).toBeInTheDocument();
+    const fusionPreview = screen.getByRole("img", {
+      name: "拼豆压合预览",
+    });
+    expect(fusionPreview).toBeInTheDocument();
+    expect(fusionPreview.tagName.toLowerCase()).toBe("svg");
+    expect(fusionPreview.querySelectorAll("path")).toHaveLength(2);
   });
 
   it("offers recalibration only while the imported source is available", () => {
@@ -208,6 +211,9 @@ describe("BeadEditorStep", () => {
           <output data-testid="pitch">
             {state.present.beadPitchMm}
           </output>
+          <output data-testid="irregularity">
+            {state.present.irregularity}
+          </output>
           <output data-testid="cells">
             {JSON.stringify(state.present.cells)}
           </output>
@@ -239,6 +245,12 @@ describe("BeadEditorStep", () => {
     );
     expect(screen.getByTestId("compression")).toHaveTextContent("84");
     expect(screen.getByText("5.2 × 5.2 mm")).toBeInTheDocument();
+
+    fireEvent.change(
+      screen.getByRole("slider", { name: "不规则挤压" }),
+      { target: { value: "67" } },
+    );
+    expect(screen.getByTestId("irregularity")).toHaveTextContent("67");
   });
 
   it("maps a matrix pointer to a bounded edit action and shows fixed inspection zoom", () => {

@@ -130,6 +130,7 @@ describe("worker supersession", () => {
         data: new Uint8ClampedArray([230, 40, 50, 255]),
         palette: [[230, 40, 50]],
         compression: 80,
+        irregularity: 0,
         pixelsPerCell: 12,
       },
     });

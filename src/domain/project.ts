@@ -8,6 +8,7 @@ import {
   BEAD_RECIPE_PAYLOAD_VERSION,
   BEAD_RENDER_SCHEMA_VERSION,
   DEFAULT_BEAD_COMPRESSION,
+  DEFAULT_BEAD_IRREGULARITY,
   DEFAULT_BEAD_PITCH_MM,
   MAX_BEAD_GRID_SIZE,
   type BeadCalibration,
@@ -401,6 +402,17 @@ export function validateBeadProject(value: unknown): BeadProject {
       "Compression must be an integer from 0 to 100.",
     );
   }
+  if (
+    project.irregularity !== undefined &&
+    (!Number.isInteger(project.irregularity) ||
+      (project.irregularity as number) < 0 ||
+      (project.irregularity as number) > 100)
+  ) {
+    return fail(
+      "invalid-irregularity",
+      "Irregular compression must be an integer from 0 to 100.",
+    );
+  }
 
   return value as BeadProject;
 }
@@ -444,6 +456,8 @@ export function createBeadProject(
     confidenceIssues: input.confidenceIssues ?? [],
     beadPitchMm: input.beadPitchMm ?? DEFAULT_BEAD_PITCH_MM,
     compression: input.compression ?? DEFAULT_BEAD_COMPRESSION,
+    irregularity:
+      input.irregularity ?? DEFAULT_BEAD_IRREGULARITY,
     ...(input.printMapping !== undefined
       ? { printMapping: input.printMapping }
       : {}),
@@ -625,6 +639,7 @@ interface BeadRecipePayload {
   };
   beadPitchMm: number;
   compression: number;
+  irregularity?: number;
 }
 
 export function createBeadRecipeSource(
@@ -643,6 +658,9 @@ export function createBeadRecipeSource(
     },
     beadPitchMm: project.beadPitchMm,
     compression: project.compression,
+    ...((project.irregularity ?? DEFAULT_BEAD_IRREGULARITY) > 0
+      ? { irregularity: project.irregularity }
+      : {}),
   };
   assertRecipePayloadBound(payload);
   return {
@@ -719,5 +737,6 @@ export function restoreBeadProjectFromRecipeSource(
     confidenceIssues: [],
     beadPitchMm: payload.beadPitchMm as number,
     compression: payload.compression as number,
+    irregularity: payload.irregularity as number | undefined,
   });
 }

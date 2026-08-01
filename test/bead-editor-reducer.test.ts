@@ -386,12 +386,17 @@ describe("bead editor reducer", () => {
     expect(state.present.confidenceIssues[0]?.resolved).toBe(false);
   });
 
-  it("updates pressure, pitch, and custom palette colors without corrupting edit history", () => {
+  it("updates pressure, irregularity, pitch, and custom palette colors without corrupting edit history", () => {
     let state = createBeadEditorState(makeProject());
     state = beadEditorReducer(state, {
       type: "set-compression",
       compression: 84,
       updatedAt: "2026-07-30T00:02:00.000Z",
+    });
+    state = beadEditorReducer(state, {
+      type: "set-irregularity",
+      irregularity: 67,
+      updatedAt: "2026-07-30T00:02:01.000Z",
     });
     state = beadEditorReducer(state, {
       type: "set-bead-pitch",
@@ -403,6 +408,7 @@ describe("bead editor reducer", () => {
     });
 
     expect(state.present.compression).toBe(84);
+    expect(state.present.irregularity).toBe(67);
     expect(state.present.beadPitchMm).toBe(2.5);
     expect(state.present.palette.at(-1)).toEqual([12, 34, 56]);
     expect(state.activePaletteIndex).toBe(2);
@@ -412,6 +418,12 @@ describe("bead editor reducer", () => {
       beadEditorReducer(state, {
         type: "set-compression",
         compression: 101,
+      }),
+    ).toBe(state);
+    expect(
+      beadEditorReducer(state, {
+        type: "set-irregularity",
+        irregularity: 101,
       }),
     ).toBe(state);
   });

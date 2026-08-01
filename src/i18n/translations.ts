@@ -96,6 +96,9 @@ const zhCN = {
   "workshop.bead.pressureLight": "0 · 轻压有孔",
   "workshop.bead.pressureStandard": "50 · 标准",
   "workshop.bead.pressureTight": "100 · 紧压无孔",
+  "workshop.bead.irregularity": "不规则挤压",
+  "workshop.bead.irregularityHint":
+    "关闭时保持标准豆板网格；开启后整颗豆子连同孔位做轻微固定偏移，让接缝略微倾斜，不会产生随机闪动。",
   "workshop.bead.beadPitch": "单豆节距",
   "workshop.bead.beadPitchHint":
     "默认 2.6 mm，表示相邻豆子中心间距，并决定交给 Lumina 的真实画布尺寸。",
@@ -109,7 +112,7 @@ const zhCN = {
   "workshop.bead.handoffSummaryDescription":
     "将发送作品原色 PNG；当前打印色库只作为映射来源记录，不会替换图纸颜色。",
   "workshop.bead.handoffSummary":
-    "{columns} × {rows} 格 · {width} × {height} mm · 压合 {compression}%",
+    "{columns} × {rows} 格 · {width} × {height} mm · 压合 {compression}% · 不规则 {irregularity}%",
   "workshop.bead.handoffLibrary": "映射来源：{label}",
   "workshop.bead.handoffNoLibrary": "未绑定打印色库",
   "workshop.bead.handoffSummaryCancel": "返回编辑",
@@ -240,6 +243,9 @@ const enUS = {
   "workshop.bead.pressureLight": "0 · Light, open holes",
   "workshop.bead.pressureStandard": "50 · Standard",
   "workshop.bead.pressureTight": "100 · Tight, closed holes",
+  "workshop.bead.irregularity": "Irregular compression",
+  "workshop.bead.irregularityHint":
+    "Off keeps the regular pegboard grid. Higher values shift each whole bead and its hole by a small stable amount so contacts are slightly misaligned without flicker.",
   "workshop.bead.beadPitch": "Bead pitch",
   "workshop.bead.beadPitchHint":
     "The 2.6 mm default is the center-to-center bead pitch and determines the physical canvas size handed to Lumina.",
@@ -254,7 +260,7 @@ const enUS = {
   "workshop.bead.handoffSummaryDescription":
     "The source-color PNG will be sent. The current print library is recorded only as mapping provenance and never replaces artwork colors.",
   "workshop.bead.handoffSummary":
-    "{columns} × {rows} cells · {width} × {height} mm · {compression}% pressure",
+    "{columns} × {rows} cells · {width} × {height} mm · {compression}% pressure · {irregularity}% irregularity",
   "workshop.bead.handoffLibrary": "Mapping source: {label}",
   "workshop.bead.handoffNoLibrary": "No print library attached",
   "workshop.bead.handoffSummaryCancel": "Back to editing",

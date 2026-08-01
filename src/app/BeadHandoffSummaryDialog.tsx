@@ -10,6 +10,7 @@ interface BeadHandoffSummaryDialogProps {
   rows: number;
   columns: number;
   compression: number;
+  irregularity: number;
   widthMm: number;
   heightMm: number;
   libraryLabel: string | null;
@@ -24,6 +25,7 @@ export function BeadHandoffSummaryDialog({
   rows,
   columns,
   compression,
+  irregularity,
   widthMm,
   heightMm,
   libraryLabel,
@@ -66,6 +68,7 @@ export function BeadHandoffSummaryDialog({
               width: widthMm,
               height: heightMm,
               compression,
+              irregularity,
             })}
           </div>
           <p>

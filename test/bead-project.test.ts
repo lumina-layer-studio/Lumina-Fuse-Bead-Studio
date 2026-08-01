@@ -72,6 +72,7 @@ describe("bead project model", () => {
       updatedAt: NOW,
       beadPitchMm: 2.6,
       compression: 50,
+      irregularity: 0,
     });
     expect(validateBeadProject(project)).toBe(project);
     expect("printMapping" in project).toBe(false);
@@ -269,6 +270,8 @@ describe("bead project model", () => {
     );
     expectInvalid({ ...project, beadPitchMm: 0.49 }, "invalid-pitch");
     expectInvalid({ ...project, compression: 50.5 }, "invalid-compression");
+    expectInvalid({ ...project, irregularity: 100.5 }, "invalid-irregularity");
+    expectInvalid({ ...project, irregularity: -1 }, "invalid-irregularity");
   });
 
   it("round-trips an editable matrix through the source-only recipe payload", () => {
@@ -294,6 +297,7 @@ describe("bead project model", () => {
       },
       beadPitchMm: 2.6,
       compression: 84,
+      irregularity: 67,
     });
 
     const source = createBeadRecipeSource(project);
@@ -314,6 +318,7 @@ describe("bead project model", () => {
       cells: project.cells,
       beadPitchMm: 2.6,
       compression: 84,
+      irregularity: 67,
       confidenceIssues: [],
       calibration: {
         inputMode: "numbered-grid",
@@ -324,6 +329,7 @@ describe("bead project model", () => {
         },
       },
     });
+    expect(source.payload).toMatchObject({ irregularity: 67 });
   });
 
   it("rejects recipe payloads for another module or with incomplete RLE", () => {

@@ -139,6 +139,7 @@ describe("bead handoff", () => {
       palette: [[250, 20, 30]],
       cells: [{ kind: "color", paletteIndex: 0 }],
       compression: 100,
+      irregularity: 42,
       printMapping: {
         libraryId: "material-archive:official",
         libraryLabel: "官方 PLA",
@@ -184,6 +185,9 @@ describe("bead handoff", () => {
       projectSchemaVersion: "bead-project/v1",
       renderSchemaVersion: "bead-render/v1",
       payload: { payloadVersion: "bead-recipe/v1" },
+    });
+    expect(handoff.recipeSource.payload).toMatchObject({
+      irregularity: 42,
     });
   });
 });

@@ -122,6 +122,7 @@ interface BeadWorkshopModuleProps {
 interface HandoffSummaryState {
   handoff: PreparedBeadHandoff;
   compression: number;
+  irregularity: number;
   libraryLabel: string | null;
 }
 
@@ -1016,6 +1017,7 @@ export function BeadWorkshopModule({
         confidenceIssues: result.confidenceIssues,
         beadPitchMm: previousProject?.beadPitchMm,
         compression: previousProject?.compression,
+        irregularity: previousProject?.irregularity,
         ...(previousProject ? { printMapping: null } : {}),
       });
       const project = previousProject
@@ -1124,6 +1126,7 @@ export function BeadWorkshopModule({
       setHandoffSummary({
         handoff,
         compression: project.compression,
+        irregularity: project.irregularity ?? 0,
         libraryLabel: hasCurrentPrintMapping
           ? project.printMapping?.libraryLabel ?? null
           : null,
@@ -1348,6 +1351,7 @@ export function BeadWorkshopModule({
             handoffSummary?.handoff.base.layout?.columns ?? 0
           }
           compression={handoffSummary?.compression ?? 0}
+          irregularity={handoffSummary?.irregularity ?? 0}
           widthMm={
             handoffSummary?.handoff.base.recommendedWidthMm ?? 0
           }

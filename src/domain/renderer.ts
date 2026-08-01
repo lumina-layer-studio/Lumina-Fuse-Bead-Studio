@@ -1,26 +1,18 @@
-import type { Raster } from "./types";
+import {
+  buildBeadFusionGeometry,
+  type BeadFusionContour,
+  type BeadFusionGeometry,
+} from "./fusionGeometry";
 import { validateBeadProject } from "./project";
 import type {
-  BeadCell,
   BeadProject,
+  Raster,
   RgbColor,
 } from "./types";
 
 const MAX_PIXELS_PER_CELL = 64;
-const SCORE_EPSILON = 1e-12;
-const OCCUPANCY_CACHE_RADIUS = 2;
-const OWNER_TILE_SIZE = 3;
 const OWNER_NONE = -1;
-const OWNER_ROW_OFFSETS = Int8Array.from([
-  -1, -1, -1,
-  0, 0, 0,
-  1, 1, 1,
-]);
-const OWNER_COLUMN_OFFSETS = Int8Array.from([
-  -1, 0, 1,
-  -1, 0, 1,
-  -1, 0, 1,
-]);
+const SCORE_EPSILON = 1e-12;
 
 export interface BeadRenderOptions {
   compression: number;
@@ -30,15 +22,8 @@ export interface BeadRenderOptions {
 export interface BeadRenderResult extends Raster {
   palette: RgbColor[];
   compression: number;
+  irregularity: number;
   pixelsPerCell: number;
-}
-
-interface RenderGeometry {
-  pressure: number;
-  outerRadius: number;
-  holeRadius: number;
-  junctionRelief: number;
-  superellipseExponent: number;
 }
 
 function validateOptions(options: BeadRenderOptions): void {
@@ -60,210 +45,6 @@ function validateOptions(options: BeadRenderOptions): void {
   }
 }
 
-function buildGeometry(
-  compression: number,
-  pixelsPerCell: number,
-): RenderGeometry {
-  const pressure = compression / 100;
-  const minimumVisibleRadius =
-    Math.SQRT1_2 / pixelsPerCell + Number.EPSILON;
-  return {
-    pressure,
-    outerRadius: 0.43 + 0.13 * pressure,
-    holeRadius:
-      compression === 100
-        ? 0
-        : Math.max(
-            0.19 * Math.pow(1 - pressure, 0.72),
-            minimumVisibleRadius,
-          ),
-    junctionRelief:
-      compression === 100
-        ? 0
-        : Math.max(
-            0.075 * Math.pow(1 - pressure, 1.35),
-            minimumVisibleRadius,
-          ),
-    superellipseExponent: 2 + 6 * pressure,
-  };
-}
-
-function isOccupied(cell: BeadCell): boolean {
-  return cell.kind !== "empty";
-}
-
-function occupiedAt(
-  occupancy: Uint8Array,
-  rows: number,
-  columns: number,
-  row: number,
-  column: number,
-): boolean {
-  return (
-    row >= 0 &&
-    column >= 0 &&
-    row < rows &&
-    column < columns &&
-    occupancy[row * columns + column] === 1
-  );
-}
-
-function contactBias(
-  occupancy: Uint8Array,
-  project: BeadProject,
-  row: number,
-  column: number,
-  deltaX: number,
-  deltaY: number,
-  pressure: number,
-): number {
-  const radialDistance = Math.hypot(deltaX, deltaY);
-  if (radialDistance === 0) {
-    return 0;
-  }
-  const unitX = deltaX / radialDistance;
-  const unitY = deltaY / radialDistance;
-  const absoluteX = Math.abs(unitX);
-  const absoluteY = Math.abs(unitY);
-  const cardinalStrength = 0.03 + 0.05 * pressure;
-  const diagonalStrength = 0.012 + 0.03 * pressure;
-  let bias = 0;
-
-  if (
-    unitX > 0 &&
-    occupiedAt(
-      occupancy,
-      project.rows,
-      project.columns,
-      row,
-      column + 1,
-    )
-  ) {
-    bias += cardinalStrength * Math.pow(absoluteX, 4);
-  } else if (
-    unitX < 0 &&
-    occupiedAt(
-      occupancy,
-      project.rows,
-      project.columns,
-      row,
-      column - 1,
-    )
-  ) {
-    bias += cardinalStrength * Math.pow(absoluteX, 4);
-  }
-
-  if (
-    unitY > 0 &&
-    occupiedAt(
-      occupancy,
-      project.rows,
-      project.columns,
-      row + 1,
-      column,
-    )
-  ) {
-    bias += cardinalStrength * Math.pow(absoluteY, 4);
-  } else if (
-    unitY < 0 &&
-    occupiedAt(
-      occupancy,
-      project.rows,
-      project.columns,
-      row - 1,
-      column,
-    )
-  ) {
-    bias += cardinalStrength * Math.pow(absoluteY, 4);
-  }
-
-  const diagonalRow = row + Math.sign(deltaY);
-  const diagonalColumn = column + Math.sign(deltaX);
-  if (
-    deltaX !== 0 &&
-    deltaY !== 0 &&
-    occupiedAt(
-      occupancy,
-      project.rows,
-      project.columns,
-      diagonalRow,
-      diagonalColumn,
-    )
-  ) {
-    const diagonalAlignment =
-      Math.min(absoluteX, absoluteY) * Math.SQRT2;
-    bias +=
-      diagonalStrength *
-      Math.pow(Math.min(1, diagonalAlignment), 3);
-  }
-  return bias;
-}
-
-function superellipseDistance(
-  deltaX: number,
-  deltaY: number,
-  exponent: number,
-): number {
-  return Math.pow(
-    Math.pow(Math.abs(deltaX), exponent) +
-      Math.pow(Math.abs(deltaY), exponent),
-    1 / exponent,
-  );
-}
-
-function isJunctionRelief(
-  occupancy: Uint8Array,
-  project: BeadProject,
-  gridX: number,
-  gridY: number,
-  radius: number,
-): boolean {
-  const junctionColumn = Math.round(gridX);
-  const junctionRow = Math.round(gridY);
-  if (
-    junctionColumn <= 0 ||
-    junctionRow <= 0 ||
-    junctionColumn >= project.columns ||
-    junctionRow >= project.rows ||
-    Math.hypot(
-      gridX - junctionColumn,
-      gridY - junctionRow,
-    ) > radius
-  ) {
-    return false;
-  }
-  return (
-    occupiedAt(
-      occupancy,
-      project.rows,
-      project.columns,
-      junctionRow - 1,
-      junctionColumn - 1,
-    ) &&
-    occupiedAt(
-      occupancy,
-      project.rows,
-      project.columns,
-      junctionRow - 1,
-      junctionColumn,
-    ) &&
-    occupiedAt(
-      occupancy,
-      project.rows,
-      project.columns,
-      junctionRow,
-      junctionColumn - 1,
-    ) &&
-    occupiedAt(
-      occupancy,
-      project.rows,
-      project.columns,
-      junctionRow,
-      junctionColumn,
-    )
-  );
-}
-
 function writeColor(
   data: Uint8ClampedArray,
   pixelOffset: number,
@@ -275,272 +56,270 @@ function writeColor(
   data[pixelOffset + 3] = 255;
 }
 
-function renderTerminalPressure(
-  project: BeadProject,
-  pixelsPerCell: number,
-  data: Uint8ClampedArray,
-  width: number,
-): void {
-  for (let row = 0; row < project.rows; row += 1) {
-    for (let column = 0; column < project.columns; column += 1) {
-      const cell = project.cells[row * project.columns + column];
-      if (cell.kind !== "color") {
-        continue;
-      }
-      const color = project.palette[cell.paletteIndex];
-      const startX = column * pixelsPerCell;
-      const startY = row * pixelsPerCell;
-      for (let localY = 0; localY < pixelsPerCell; localY += 1) {
-        let offset =
-          ((startY + localY) * width + startX) * 4;
-        for (let localX = 0; localX < pixelsPerCell; localX += 1) {
-          writeColor(data, offset, color);
-          offset += 4;
-        }
-      }
-    }
+function contourBounds(contour: BeadFusionContour): {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+} {
+  let left = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  let top = Number.POSITIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  for (const point of contour.points) {
+    left = Math.min(left, point.x);
+    right = Math.max(right, point.x);
+    top = Math.min(top, point.y);
+    bottom = Math.max(bottom, point.y);
   }
+  return { left, right, top, bottom };
 }
 
-function candidateScore(
-  occupancy: Uint8Array,
-  project: BeadProject,
-  row: number,
-  column: number,
-  deltaX: number,
-  deltaY: number,
-  geometry: RenderGeometry,
-): number | null {
-  if (Math.hypot(deltaX, deltaY) < geometry.holeRadius) {
-    return null;
-  }
-  const score =
-    superellipseDistance(
-      deltaX,
-      deltaY,
-      geometry.superellipseExponent,
-    ) -
-    contactBias(
-      occupancy,
-      project,
-      row,
-      column,
-      deltaX,
-      deltaY,
-      geometry.pressure,
-    );
-  return score <= geometry.outerRadius ? score : null;
-}
-
-function occupancyNeighborhoodKey(
-  occupancy: Uint8Array,
-  project: BeadProject,
-  logicalRow: number,
-  logicalColumn: number,
-): number {
-  let key = 0;
-  let bit = 0;
+function scanlineIntersections(
+  contour: BeadFusionContour,
+  gridY: number,
+): number[] {
+  const intersections: number[] = [];
+  const { points } = contour;
   for (
-    let rowOffset = -OCCUPANCY_CACHE_RADIUS;
-    rowOffset <= OCCUPANCY_CACHE_RADIUS;
-    rowOffset += 1
+    let index = 0, previous = points.length - 1;
+    index < points.length;
+    previous = index, index += 1
   ) {
-    for (
-      let columnOffset = -OCCUPANCY_CACHE_RADIUS;
-      columnOffset <= OCCUPANCY_CACHE_RADIUS;
-      columnOffset += 1
-    ) {
-      if (
-        occupiedAt(
-          occupancy,
-          project.rows,
-          project.columns,
-          logicalRow + rowOffset,
-          logicalColumn + columnOffset,
-        )
-      ) {
-        key |= 1 << bit;
-      }
-      bit += 1;
-    }
+    const first = points[previous];
+    const second = points[index];
+    if ((first.y > gridY) === (second.y > gridY)) continue;
+    intersections.push(
+      first.x +
+        ((gridY - first.y) * (second.x - first.x)) /
+          (second.y - first.y),
+    );
   }
-  return key;
+  intersections.sort((left, right) => left - right);
+  return intersections;
 }
 
-function buildOwnerTile(
-  occupancy: Uint8Array,
-  project: BeadProject,
-  logicalRow: number,
-  logicalColumn: number,
-  pixelsPerCell: number,
-  geometry: RenderGeometry,
-): Int8Array {
-  const owners = new Int8Array(
-    pixelsPerCell * pixelsPerCell,
-  );
-  owners.fill(OWNER_NONE);
-  const minimumRow = Math.max(0, logicalRow - 1);
-  const maximumRow = Math.min(
-    project.rows - 1,
-    logicalRow + 1,
-  );
-  const minimumColumn = Math.max(0, logicalColumn - 1);
-  const maximumColumn = Math.min(
-    project.columns - 1,
-    logicalColumn + 1,
-  );
+function claimPixel(
+  ownerIndices: Int32Array,
+  ownerScores: Float64Array,
+  width: number,
+  x: number,
+  y: number,
+  gridX: number,
+  gridY: number,
+  contour: BeadFusionContour,
+): void {
+  const offset = y * width + x;
+  const score =
+    (gridX - contour.center.x) ** 2 +
+    (gridY - contour.center.y) ** 2;
+  if (
+    score < ownerScores[offset] - SCORE_EPSILON ||
+    (Math.abs(score - ownerScores[offset]) <= SCORE_EPSILON &&
+      (ownerIndices[offset] === OWNER_NONE ||
+        contour.cellIndex < ownerIndices[offset]))
+  ) {
+    ownerIndices[offset] = contour.cellIndex;
+    ownerScores[offset] = score;
+  }
+}
 
-  for (let localY = 0; localY < pixelsPerCell; localY += 1) {
-    const y = logicalRow * pixelsPerCell + localY;
+function rasterizeContour(
+  contour: BeadFusionContour,
+  pixelsPerCell: number,
+  width: number,
+  height: number,
+  ownerIndices: Int32Array,
+  ownerScores: Float64Array,
+): void {
+  const bounds = contourBounds(contour);
+  const firstY = Math.max(
+    0,
+    Math.ceil(bounds.top * pixelsPerCell - 0.5),
+  );
+  const lastY = Math.min(
+    height - 1,
+    Math.floor(bounds.bottom * pixelsPerCell - 0.5),
+  );
+  for (let y = firstY; y <= lastY; y += 1) {
     const gridY = (y + 0.5) / pixelsPerCell;
-    for (let localX = 0; localX < pixelsPerCell; localX += 1) {
-      const x = logicalColumn * pixelsPerCell + localX;
+    const intersections = scanlineIntersections(contour, gridY);
+    for (let index = 0; index + 1 < intersections.length; index += 2) {
+      const firstX = Math.max(
+        0,
+        Math.ceil(intersections[index] * pixelsPerCell - 0.5),
+      );
+      const lastX = Math.min(
+        width - 1,
+        Math.floor(intersections[index + 1] * pixelsPerCell - 0.5),
+      );
+      for (let x = firstX; x <= lastX; x += 1) {
+        claimPixel(
+          ownerIndices,
+          ownerScores,
+          width,
+          x,
+          y,
+          (x + 0.5) / pixelsPerCell,
+          gridY,
+          contour,
+        );
+      }
+    }
+  }
+}
+
+function clearCircle(
+  ownerIndices: Int32Array,
+  width: number,
+  height: number,
+  pixelsPerCell: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+): void {
+  if (radius <= 0) return;
+  const firstX = Math.max(
+    0,
+    Math.ceil((centerX - radius) * pixelsPerCell - 0.5),
+  );
+  const lastX = Math.min(
+    width - 1,
+    Math.floor((centerX + radius) * pixelsPerCell - 0.5),
+  );
+  const firstY = Math.max(
+    0,
+    Math.ceil((centerY - radius) * pixelsPerCell - 0.5),
+  );
+  const lastY = Math.min(
+    height - 1,
+    Math.floor((centerY + radius) * pixelsPerCell - 0.5),
+  );
+  const radiusSquared = radius * radius;
+  for (let y = firstY; y <= lastY; y += 1) {
+    const gridY = (y + 0.5) / pixelsPerCell;
+    for (let x = firstX; x <= lastX; x += 1) {
       const gridX = (x + 0.5) / pixelsPerCell;
       if (
-        isJunctionRelief(
-          occupancy,
-          project,
-          gridX,
-          gridY,
-          geometry.junctionRelief,
-        )
+        (gridX - centerX) ** 2 + (gridY - centerY) ** 2 <
+        radiusSquared
       ) {
-        continue;
-      }
-
-      let ownerIndex = -1;
-      let ownerScore = Number.POSITIVE_INFINITY;
-      let ownerRow = -1;
-      let ownerColumn = -1;
-
-      for (let row = minimumRow; row <= maximumRow; row += 1) {
-        const deltaY = gridY - (row + 0.5);
-        if (Math.abs(deltaY) > 0.75) {
-          continue;
-        }
-        for (
-          let column = minimumColumn;
-          column <= maximumColumn;
-          column += 1
-        ) {
-          const index = row * project.columns + column;
-          if (occupancy[index] === 0) {
-            continue;
-          }
-          const deltaX = gridX - (column + 0.5);
-          if (Math.abs(deltaX) > 0.75) {
-            continue;
-          }
-          const score = candidateScore(
-            occupancy,
-            project,
-            row,
-            column,
-            deltaX,
-            deltaY,
-            geometry,
-          );
-          if (
-            score !== null &&
-            (score < ownerScore - SCORE_EPSILON ||
-              (Math.abs(score - ownerScore) <= SCORE_EPSILON &&
-                (ownerIndex < 0 || index < ownerIndex)))
-          ) {
-            ownerIndex = index;
-            ownerScore = score;
-            ownerRow = row;
-            ownerColumn = column;
-          }
-        }
-      }
-
-      if (ownerIndex >= 0) {
-        owners[localY * pixelsPerCell + localX] =
-          (ownerRow - logicalRow + 1) * OWNER_TILE_SIZE +
-          (ownerColumn - logicalColumn + 1);
+        ownerIndices[y * width + x] = OWNER_NONE;
       }
     }
   }
-  return owners;
 }
 
-function renderPressureField(
-  project: BeadProject,
-  pixelsPerCell: number,
-  data: Uint8ClampedArray,
-  width: number,
-  geometry: RenderGeometry,
-): void {
-  const occupancy = Uint8Array.from(
-    project.cells,
-    (cell) => (isOccupied(cell) ? 1 : 0),
+function isOccupied(project: BeadProject, row: number, column: number): boolean {
+  return (
+    row >= 0 &&
+    column >= 0 &&
+    row < project.rows &&
+    column < project.columns &&
+    project.cells[row * project.columns + column].kind !== "empty"
   );
-  const ownerTileCache = new Map<number, Int8Array>();
+}
 
-  for (let logicalRow = 0; logicalRow < project.rows; logicalRow += 1) {
-    for (
-      let logicalColumn = 0;
-      logicalColumn < project.columns;
-      logicalColumn += 1
-    ) {
-      const logicalCell =
-        project.cells[
-          logicalRow * project.columns + logicalColumn
-        ];
-      if (logicalCell.kind === "transparent-support") {
-        continue;
-      }
-      const cacheKey = occupancyNeighborhoodKey(
-        occupancy,
-        project,
-        logicalRow,
-        logicalColumn,
-      );
-      let ownerTile = ownerTileCache.get(cacheKey);
-      if (ownerTile === undefined) {
-        ownerTile = buildOwnerTile(
-          occupancy,
-          project,
-          logicalRow,
-          logicalColumn,
+function clearReliefs(
+  project: BeadProject,
+  geometry: BeadFusionGeometry,
+  compression: number,
+  pixelsPerCell: number,
+  width: number,
+  height: number,
+  ownerIndices: Int32Array,
+): void {
+  if (compression === 100) return;
+  const minimumVisibleRadius =
+    Math.SQRT1_2 / pixelsPerCell + Number.EPSILON;
+  const pressure = compression / 100;
+  const holeRadius = Math.max(
+    geometry.holeRadius,
+    minimumVisibleRadius,
+  );
+  for (const contour of geometry.contours) {
+    clearCircle(
+      ownerIndices,
+      width,
+      height,
+      pixelsPerCell,
+      contour.center.x,
+      contour.center.y,
+      holeRadius,
+    );
+  }
+  const junctionRadius = Math.max(
+    0.075 * Math.pow(1 - pressure, 1.35),
+    minimumVisibleRadius,
+  );
+  for (let row = 1; row < project.rows; row += 1) {
+    for (let column = 1; column < project.columns; column += 1) {
+      if (
+        isOccupied(project, row - 1, column - 1) &&
+        isOccupied(project, row - 1, column) &&
+        isOccupied(project, row, column - 1) &&
+        isOccupied(project, row, column)
+      ) {
+        clearCircle(
+          ownerIndices,
+          width,
+          height,
           pixelsPerCell,
-          geometry,
+          column,
+          row,
+          junctionRadius,
         );
-        ownerTileCache.set(cacheKey, ownerTile);
-      }
-
-      const startX = logicalColumn * pixelsPerCell;
-      const startY = logicalRow * pixelsPerCell;
-      for (let localY = 0; localY < pixelsPerCell; localY += 1) {
-        for (let localX = 0; localX < pixelsPerCell; localX += 1) {
-          const ownerCode =
-            ownerTile[localY * pixelsPerCell + localX];
-          if (ownerCode === OWNER_NONE) {
-            continue;
-          }
-          const ownerRow =
-            logicalRow + OWNER_ROW_OFFSETS[ownerCode];
-          const ownerColumn =
-            logicalColumn + OWNER_COLUMN_OFFSETS[ownerCode];
-          const owner =
-            project.cells[
-              ownerRow * project.columns + ownerColumn
-            ];
-          if (owner.kind === "color") {
-            writeColor(
-              data,
-              (
-                (startY + localY) * width +
-                startX +
-                localX
-              ) * 4,
-              project.palette[owner.paletteIndex],
-            );
-          }
-        }
       }
     }
   }
+}
+
+function renderOwners(
+  project: BeadProject,
+  geometry: BeadFusionGeometry,
+  compression: number,
+  pixelsPerCell: number,
+  width: number,
+  height: number,
+): Uint8ClampedArray {
+  const ownerIndices = new Int32Array(width * height);
+  ownerIndices.fill(OWNER_NONE);
+  const ownerScores = new Float64Array(width * height);
+  ownerScores.fill(Number.POSITIVE_INFINITY);
+  for (const contour of geometry.contours) {
+    rasterizeContour(
+      contour,
+      pixelsPerCell,
+      width,
+      height,
+      ownerIndices,
+      ownerScores,
+    );
+  }
+  clearReliefs(
+    project,
+    geometry,
+    compression,
+    pixelsPerCell,
+    width,
+    height,
+    ownerIndices,
+  );
+
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let pixelIndex = 0; pixelIndex < ownerIndices.length; pixelIndex += 1) {
+    const ownerIndex = ownerIndices[pixelIndex];
+    if (ownerIndex === OWNER_NONE) continue;
+    const owner = project.cells[ownerIndex];
+    if (owner.kind === "color") {
+      writeColor(
+        data,
+        pixelIndex * 4,
+        project.palette[owner.paletteIndex],
+      );
+    }
+  }
+  return data;
 }
 
 export function renderBeadProject(
@@ -549,38 +328,32 @@ export function renderBeadProject(
 ): BeadRenderResult {
   const project = validateBeadProject(input);
   validateOptions(options);
+  const irregularity =
+    project.irregularity ?? 0;
   const width = project.columns * options.pixelsPerCell;
   const height = project.rows * options.pixelsPerCell;
-  const data = new Uint8ClampedArray(width * height * 4);
-
-  if (options.compression === 100) {
-    renderTerminalPressure(
-      project,
-      options.pixelsPerCell,
-      data,
-      width,
-    );
-  } else {
-    renderPressureField(
-      project,
-      options.pixelsPerCell,
-      data,
-      width,
-      buildGeometry(
-        options.compression,
-        options.pixelsPerCell,
-      ),
-    );
-  }
+  const geometry = buildBeadFusionGeometry(
+    project,
+    options.compression,
+    irregularity,
+  );
 
   return {
     width,
     height,
-    data,
+    data: renderOwners(
+      project,
+      geometry,
+      options.compression,
+      options.pixelsPerCell,
+      width,
+      height,
+    ),
     palette: project.palette.map(
       (color) => [...color] as RgbColor,
     ),
     compression: options.compression,
+    irregularity,
     pixelsPerCell: options.pixelsPerCell,
   };
 }

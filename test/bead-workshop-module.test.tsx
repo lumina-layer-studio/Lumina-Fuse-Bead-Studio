@@ -237,6 +237,7 @@ function projectWithSource(
     },
     beadPitchMm: 3.1,
     compression: 77,
+    irregularity: 63,
     printMapping: {
       libraryId: "test-library",
       libraryLabel: "Test library",
@@ -905,6 +906,7 @@ describe("BeadWorkshopModule", () => {
       cells: project.cells,
       beadPitchMm: 3.1,
       compression: 77,
+      irregularity: 63,
       printMapping: project.printMapping,
       calibration: {
         crop: { x: 5, y: 0, width: 20, height: 20 },
@@ -948,6 +950,7 @@ describe("BeadWorkshopModule", () => {
       createdAt: project.createdAt,
       beadPitchMm: project.beadPitchMm,
       compression: project.compression,
+      irregularity: project.irregularity,
       cells: replacement.cells,
       source: {
         fileName: "restored.png",
@@ -1910,7 +1913,9 @@ describe("BeadWorkshopModule", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("2 × 2 格 · 5.2 × 5.2 mm · 压合 50%"),
+      screen.getByText(
+        "2 × 2 格 · 5.2 × 5.2 mm · 压合 50% · 不规则 0%",
+      ),
     ).toBeInTheDocument();
     expect(harness.payloads("handoff.image")).toHaveLength(0);
 

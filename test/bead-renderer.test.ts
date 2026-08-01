@@ -128,7 +128,7 @@ describe("bead pressure renderer", () => {
     expect(alphaAt(tight, 32, 32)).toBe(255);
   });
 
-  it("has no seam for same colors and preserves exact boundaries for different colors", () => {
+  it("closes the contact centre without turning the entire shared edge into a square wall", () => {
     const sameColor = renderBeadProject(
       makeProject(1, 2, [
         { kind: "color", paletteIndex: 0 },
@@ -144,12 +144,63 @@ describe("bead pressure renderer", () => {
       { compression: 100, pixelsPerCell: 32 },
     );
 
-    for (let y = 0; y < sameColor.height; y += 1) {
-      expect(alphaAt(sameColor, 31, y)).toBe(255);
-      expect(alphaAt(sameColor, 32, y)).toBe(255);
-    }
+    expect(alphaAt(sameColor, 31, 16)).toBe(255);
+    expect(alphaAt(sameColor, 32, 16)).toBe(255);
+    expect(alphaAt(sameColor, 31, 0)).toBe(0);
+    expect(alphaAt(sameColor, 32, 0)).toBe(0);
     expect(rgbAt(differentColors, 31, 16)).toEqual(RED);
     expect(rgbAt(differentColors, 32, 16)).toEqual(BLUE);
+  });
+
+  it("keeps rounded exposed bead corners even at terminal pressure", () => {
+    const rendered = renderBeadProject(
+      makeProject(2, 2, [
+        { kind: "color", paletteIndex: 0 },
+        { kind: "color", paletteIndex: 0 },
+        { kind: "color", paletteIndex: 0 },
+        { kind: "color", paletteIndex: 0 },
+      ]),
+      { compression: 100, pixelsPerCell: 32 },
+    );
+
+    expect(alphaAt(rendered, 0, 0)).toBe(0);
+    expect(alphaAt(rendered, 63, 0)).toBe(0);
+    expect(alphaAt(rendered, 32, 32)).toBe(255);
+  });
+
+  it("renders optional irregular compression deterministically without changing the canvas", () => {
+    const regularProject = makeProject(2, 3, [
+      { kind: "color", paletteIndex: 0 },
+      { kind: "color", paletteIndex: 0 },
+      { kind: "color", paletteIndex: 1 },
+      { kind: "color", paletteIndex: 0 },
+      { kind: "color", paletteIndex: 1 },
+      { kind: "empty" },
+    ]);
+    const irregularProject = {
+      ...regularProject,
+      irregularity: 100,
+    };
+    const regular = renderBeadProject(regularProject, {
+      compression: 55,
+      pixelsPerCell: 32,
+    });
+    const irregular = renderBeadProject(irregularProject, {
+      compression: 55,
+      pixelsPerCell: 32,
+    });
+    const repeated = renderBeadProject(irregularProject, {
+      compression: 55,
+      pixelsPerCell: 32,
+    });
+
+    expect(irregular).toMatchObject({
+      width: regular.width,
+      height: regular.height,
+      irregularity: 100,
+    });
+    expect(irregular.data).not.toEqual(regular.data);
+    expect(repeated.data).toEqual(irregular.data);
   });
 
   it("uses support cells in contact geometry but writes their owned area transparent", () => {
@@ -212,7 +263,7 @@ describe("bead pressure renderer", () => {
     }
   });
 
-  it("keeps the established pressure-field pixels for mixed neighborhoods", () => {
+  it("keeps pressure-field pixels deterministic for mixed neighborhoods", () => {
     const cells: BeadCell[] = Array.from(
       { length: 30 },
       (_, index) => {
@@ -244,11 +295,27 @@ describe("bead pressure renderer", () => {
       );
     }
 
-    expect(hash.digest("hex")).toBe(
-      "36d2bb7aacad5ef3e27e2b82a76c9dd6bf8d51ce981d568bce5477f6d972755c",
-    );
-    expect(previewHash.digest("hex")).toBe(
-      "74e6c31618e0d71e290b5f7f5b0fd02e60c78cde94876cbd7612c1fc3756b4ee",
+    const firstHash = hash.digest("hex");
+    const firstPreviewHash = previewHash.digest("hex");
+    const repeatedHash = createHash("sha256");
+    const repeatedPreviewHash = createHash("sha256");
+    for (const compression of [0, 35, 80, 99]) {
+      repeatedHash.update(
+        renderBeadProject(project, {
+          compression,
+          pixelsPerCell: 16,
+        }).data,
+      );
+      repeatedPreviewHash.update(
+        renderBeadProject(project, {
+          compression,
+          pixelsPerCell: 12,
+        }).data,
+      );
+    }
+    expect(repeatedHash.digest("hex")).toBe(firstHash);
+    expect(repeatedPreviewHash.digest("hex")).toBe(
+      firstPreviewHash,
     );
   });
 });

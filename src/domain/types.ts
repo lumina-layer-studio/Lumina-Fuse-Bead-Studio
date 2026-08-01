@@ -1,10 +1,11 @@
 export const BEAD_MODULE_ID = "lumina.bead-pattern" as const;
-export const BEAD_MODULE_VERSION = "1.0.7" as const;
+export const BEAD_MODULE_VERSION = "1.0.8-dev.3" as const;
 export const BEAD_PROJECT_SCHEMA_VERSION = "bead-project/v1" as const;
 export const BEAD_RENDER_SCHEMA_VERSION = "bead-render/v1" as const;
 export const BEAD_RECIPE_PAYLOAD_VERSION = "bead-recipe/v1" as const;
 export const DEFAULT_BEAD_PITCH_MM = 2.6;
 export const DEFAULT_BEAD_COMPRESSION = 50;
+export const DEFAULT_BEAD_IRREGULARITY = 0;
 export const MAX_BEAD_GRID_SIZE = 128;
 
 export type RgbColor = [number, number, number];
@@ -97,6 +98,7 @@ export interface BeadProject {
   confidenceIssues: BeadConfidenceIssue[];
   beadPitchMm: number;
   compression: number;
+  irregularity?: number;
   printMapping?: BeadPrintMapping | null;
 }
 
@@ -115,6 +117,7 @@ export interface CreateBeadProjectInput {
   confidenceIssues?: BeadConfidenceIssue[];
   beadPitchMm?: number;
   compression?: number;
+  irregularity?: number;
   printMapping?: BeadPrintMapping | null;
 }
 
