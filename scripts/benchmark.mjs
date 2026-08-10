@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import { JSDOM } from "jsdom";
 import { createServer } from "vite";
 
 const args = new Set(process.argv.slice(2));
@@ -36,6 +37,17 @@ function elapsed(action) {
   return { value, milliseconds: performance.now() - started };
 }
 
+function geometryBytes(geometry) {
+  const attributeBytes = Object.values(geometry.attributes).reduce(
+    (total, attribute) => total + attribute.array.byteLength,
+    0,
+  );
+  return attributeBytes + (geometry.index?.array.byteLength ?? 0);
+}
+
+const benchmarkDom = new JSDOM();
+globalThis.DOMParser = benchmarkDom.window.DOMParser;
+
 const server = await createServer({
   root: process.cwd(),
   configFile: false,
@@ -55,8 +67,17 @@ try {
   const { renderBeadProject } = await server.ssrLoadModule(
     "/src/domain/renderer.ts",
   );
-  const { buildBeadFusionPreviewSvg } = await server.ssrLoadModule(
+  const {
+    buildBeadFusionPreviewSvg,
+    buildBeadFusionSurfacePaths,
+  } = await server.ssrLoadModule(
     "/src/domain/svgRenderer.ts",
+  );
+  const { buildPhysicalPreviewModel } = await server.ssrLoadModule(
+    "/src/domain/physicalPreviewModel.ts",
+  );
+  const { buildBeadPreviewSurfaceGeometry } = await server.ssrLoadModule(
+    "/src/app/beadThreePreviewController.ts",
   );
   const previewProject = makeProject(createBeadProject, 52, 52);
   const fullProject = makeProject(createBeadProject, 104, 104);
@@ -82,6 +103,11 @@ try {
         : { kind: "color", paletteIndex: index % 4 },
     ),
   };
+  const physicalPreview16384Project = makeProject(
+    createBeadProject,
+    128,
+    128,
+  );
 
   // Warm the transform and JIT paths before measuring.
   renderBeadProject(makeProject(createBeadProject, 4, 4), {
@@ -95,6 +121,13 @@ try {
       irregularity: 45,
     },
   );
+  buildBeadFusionSurfacePaths({
+    ...makeProject(createBeadProject, 4, 4),
+    compression: 83,
+    irregularity: 45,
+  });
+  buildPhysicalPreviewModel(svgPreview3532Project, []);
+  buildPhysicalPreviewModel(physicalPreview16384Project, []);
 
   const preview = elapsed(() =>
     renderBeadProject(previewProject, {
@@ -119,9 +152,38 @@ try {
   const svgPreview3532 = elapsed(() =>
     buildBeadFusionPreviewSvg(svgPreview3532Project),
   );
+  const fusionSurface911 = elapsed(() =>
+    buildBeadFusionSurfacePaths(svgPreview911Project),
+  );
+  const fusionSurface3532 = elapsed(() =>
+    buildBeadFusionSurfacePaths(svgPreview3532Project),
+  );
+  const physicalPreview3532 = elapsed(() =>
+    buildPhysicalPreviewModel(
+      svgPreview3532Project,
+      fusionSurface3532.value,
+    ),
+  );
+  const physicalPreview16384 = elapsed(() =>
+    buildPhysicalPreviewModel(physicalPreview16384Project, []),
+  );
+  const threeGeometry3532 = elapsed(() =>
+    physicalPreview3532.value.surfacePaths.flatMap((surfacePath) => {
+      const geometry = buildBeadPreviewSurfaceGeometry(
+        physicalPreview3532.value,
+        surfacePath.d,
+      );
+      return geometry === null ? [] : [geometry];
+    }),
+  );
+  const threeGeometry3532Bytes = threeGeometry3532.value.reduce(
+    (total, geometry) => total + geometryBytes(geometry),
+    0,
+  );
+  for (const geometry of threeGeometry3532.value) geometry.dispose();
 
   const result = {
-    schemaVersion: 2,
+    schemaVersion: 5,
     preview52Ms: Number(preview.milliseconds.toFixed(3)),
     full104Ms: Number(full.milliseconds.toFixed(3)),
     mainThreadMaxSliceMs: Number(transfer.milliseconds.toFixed(3)),
@@ -133,6 +195,22 @@ try {
     ),
     svgPreview3532Ms: Number(
       svgPreview3532.milliseconds.toFixed(3),
+    ),
+    fusionSurface911Ms: Number(
+      fusionSurface911.milliseconds.toFixed(3),
+    ),
+    fusionSurface3532Ms: Number(
+      fusionSurface3532.milliseconds.toFixed(3),
+    ),
+    threeGeometry3532Ms: Number(
+      threeGeometry3532.milliseconds.toFixed(3),
+    ),
+    threeGeometry3532Bytes,
+    physicalPreview3532Ms: Number(
+      physicalPreview3532.milliseconds.toFixed(3),
+    ),
+    physicalPreview16384Ms: Number(
+      physicalPreview16384.milliseconds.toFixed(3),
     ),
   };
 
@@ -156,4 +234,5 @@ try {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } finally {
   await server.close();
+  benchmarkDom.window.close();
 }

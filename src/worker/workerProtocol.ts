@@ -1,6 +1,9 @@
 import type { Raster } from "../domain/types";
 import type { BeadRenderResult } from "../domain/renderer";
-import type { BeadFusionPreviewSvg } from "../domain/svgRenderer";
+import type {
+  BeadFusionPreviewSvg,
+  BeadFusionSvgPath,
+} from "../domain/svgRenderer";
 import type {
   BeadProject,
   PatternClassification,
@@ -29,6 +32,11 @@ export type BeadWorkerRequest =
   | {
       id: number;
       type: "render-preview";
+      project: BeadProject;
+    }
+  | {
+      id: number;
+      type: "render-surface";
       project: BeadProject;
     };
 
@@ -59,6 +67,12 @@ export type BeadWorkerResponse =
     }
   | {
       id: number;
+      ok: true;
+      type: "render-surface";
+      result: BeadFusionSvgPath[];
+    }
+  | {
+      id: number;
       ok: false;
       errorCode: string;
       message: string;
@@ -71,4 +85,5 @@ export interface BeadWorkerResultMap {
   recognize: RecognitionResult;
   render: BeadRenderResult;
   "render-preview": BeadFusionPreviewSvg;
+  "render-surface": BeadFusionSvgPath[];
 }

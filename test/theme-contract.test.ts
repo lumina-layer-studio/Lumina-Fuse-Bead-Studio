@@ -19,5 +19,11 @@ describe("Workshop theme contract", () => {
     expect(css).toMatch(
       /\.bead-canvas--matrix\s*{[^}]*border-radius:\s*0\s*;/,
     );
+    expect(css).toMatch(
+      /\.bead-three-preview\s*{[^}]*height:\s*clamp\(/,
+    );
+    expect(css).toMatch(
+      /\.bead-three-preview canvas\s*{[^}]*touch-action:\s*none\s*;/,
+    );
   });
 });

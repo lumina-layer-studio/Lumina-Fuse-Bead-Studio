@@ -4,6 +4,8 @@ const MAX_IRREGULAR_OFFSET = 0.024;
 const MAX_IRREGULAR_RADIUS_DELTA = 0.015;
 const MAX_OWNERSHIP_BIAS = 0.045;
 const DEFAULT_SAMPLE_COUNT = 96;
+const MIN_SAMPLE_COUNT = 8;
+const MAX_SAMPLE_COUNT = 512;
 
 interface GeometryCell {
   cellIndex: number;
@@ -323,6 +325,7 @@ function contourPoints(
   centers: ReadonlyMap<string, FusionPoint>,
   columns: number,
   rows: number,
+  sampleCount: number,
 ): FusionPoint[] {
   const center = centers.get(coordinateKey(cell.row, cell.column));
   if (!center) {
@@ -413,8 +416,8 @@ function contourPoints(
     .filter(({ fusionWeight }) => fusionWeight > 0);
   const points: FusionPoint[] = [];
 
-  for (let index = 0; index < DEFAULT_SAMPLE_COUNT; index += 1) {
-    const angle = (Math.PI * 2 * index) / DEFAULT_SAMPLE_COUNT;
+  for (let index = 0; index < sampleCount; index += 1) {
+    const angle = (Math.PI * 2 * index) / sampleCount;
     const cosine = Math.cos(angle);
     const sine = Math.sin(angle);
     let localX = cosine * radius;
@@ -550,7 +553,17 @@ export function buildBeadFusionGeometry(
   project: BeadProject,
   compression: number,
   irregularity = 0,
+  sampleCount = DEFAULT_SAMPLE_COUNT,
 ): BeadFusionGeometry {
+  if (
+    !Number.isInteger(sampleCount) ||
+    sampleCount < MIN_SAMPLE_COUNT ||
+    sampleCount > MAX_SAMPLE_COUNT
+  ) {
+    throw new RangeError(
+      `Fusion contour sample count must be an integer from ${MIN_SAMPLE_COUNT} to ${MAX_SAMPLE_COUNT}.`,
+    );
+  }
   const pressure = clamp01(compression / 100);
   const normalizedIrregularity = clamp01(irregularity / 100);
   const occupied: GeometryCell[] = project.cells.flatMap(
@@ -658,6 +671,7 @@ export function buildBeadFusionGeometry(
         centers,
         project.columns,
         project.rows,
+        sampleCount,
       ),
     })),
     contacts,

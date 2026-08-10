@@ -16,6 +16,26 @@ import {
 import { createBeadProject } from "../src/domain/project";
 import { translate } from "../src/i18n/translations";
 
+const threePreviewCapture = vi.hoisted(() => ({
+  project: null as ReturnType<typeof project> | null,
+}));
+
+vi.mock("../src/app/BeadThreePreview", () => ({
+  MAX_THREE_PREVIEW_BEADS: 4_096,
+  supportsBeadThreePreviewCount: (beadCount: number) =>
+    beadCount <= 4_096,
+  BeadThreePreview: ({
+    project: previewProject,
+    ariaLabel,
+  }: {
+    project: ReturnType<typeof project>;
+    ariaLabel: string;
+  }) => {
+    threePreviewCapture.project = previewProject;
+    return <canvas role="img" aria-label={ariaLabel} />;
+  },
+}));
+
 const t = (key: string) => translate("zh-CN", key);
 
 function project() {
@@ -54,6 +74,7 @@ function project() {
 
 describe("BeadEditorStep", () => {
   beforeEach(() => {
+    threePreviewCapture.project = null;
     vi.spyOn(
       HTMLCanvasElement.prototype,
       "getContext",
@@ -75,6 +96,10 @@ describe("BeadEditorStep", () => {
         translate={t}
         dispatch={dispatch}
         onNewProject={vi.fn()}
+        displayPalette={[
+          [11, 22, 33],
+          [44, 55, 66],
+        ]}
       />,
     );
 
@@ -145,6 +170,58 @@ describe("BeadEditorStep", () => {
     expect(
       fusionPreview.querySelectorAll("[data-bead-fusion-path]"),
     ).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "3D 预览" }));
+    expect(
+      screen.getByRole("img", { name: "可旋转的拼豆 3D 预览" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "拖动旋转、滚轮缩放；3D 与压合预览使用同一套挤压规则，并额外显示成品厚度、豆板和定位柱。",
+      ),
+    ).toBeInTheDocument();
+    expect(threePreviewCapture.project?.palette).toEqual([
+      [11, 22, 33],
+      [44, 55, 66],
+    ]);
+  });
+
+  it("explains when an oversized project uses the 2D pressure fallback", () => {
+    const rows = 65;
+    const columns = 64;
+    const cellCount = rows * columns;
+    const oversizedProject = createBeadProject({
+      projectId: "editor-three-preview-limit",
+      moduleVersion: "1.0.8",
+      now: "2026-08-11T00:00:00.000Z",
+      rows,
+      columns,
+      palette: [[230, 40, 50]],
+      cells: Array.from({ length: cellCount }, () => ({
+        kind: "color" as const,
+        paletteIndex: 0,
+      })),
+    });
+    render(
+      <BeadEditorStep
+        state={createBeadEditorState(oversizedProject)}
+        sourceRaster={null}
+        translate={t}
+        dispatch={vi.fn()}
+        onNewProject={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "3D 预览" }));
+    expect(
+      screen.getByText(
+        "当前图案有 4160 颗豆，超过 4096 颗的交互式 3D 安全上限；已显示同规则的 2D 压合预览。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "拖动旋转、滚轮缩放；3D 与压合预览使用同一套挤压规则，并额外显示成品厚度、豆板和定位柱。",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("offers recalibration only while the imported source is available", () => {

@@ -154,6 +154,16 @@ export class BeadWorkerClient {
     }));
   }
 
+  renderSurface(
+    project: BeadProject,
+  ): BeadWorkerTask<BeadWorkerResultMap["render-surface"]> {
+    return this.post("render-surface", (id) => ({
+      id,
+      type: "render-surface",
+      project: { ...project, source: null },
+    }));
+  }
+
   cancelBefore(requestId: number): void {
     for (const [id, task] of this.pending) {
       if (id < requestId) {

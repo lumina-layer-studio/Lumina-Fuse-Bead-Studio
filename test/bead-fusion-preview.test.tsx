@@ -212,4 +212,38 @@ describe("BeadFusionPreview", () => {
     view.unmount();
     expect(secondRenderer.dispose).toHaveBeenCalledTimes(1);
   });
+
+  it("renders a local SVG fallback when Worker renderer creation throws synchronously", async () => {
+    const project = createBeadProject({
+      projectId: "preview-worker-construction-fallback",
+      moduleVersion: "1.0.8",
+      now: "2026-08-11T00:00:00.000Z",
+      rows: 1,
+      columns: 1,
+      palette: [[230, 40, 50]],
+      cells: [{ kind: "color", paletteIndex: 0 }],
+      compression: 80,
+      irregularity: 20,
+    });
+
+    render(
+      <BeadFusionPreview
+        project={project}
+        ariaLabel="Worker 构造失败兜底"
+        createPreviewRenderer={() => {
+          throw new Error("Worker blocked by CSP");
+        }}
+      />,
+    );
+
+    const preview = screen.getByRole("img", {
+      name: "Worker 构造失败兜底",
+    });
+    await waitFor(() => {
+      expect(
+        preview.querySelectorAll("[data-bead-fusion-path]"),
+      ).toHaveLength(1);
+    });
+    expect(preview).toHaveAttribute("aria-busy", "false");
+  });
 });

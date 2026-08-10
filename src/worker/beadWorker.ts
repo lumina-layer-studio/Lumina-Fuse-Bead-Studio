@@ -3,7 +3,10 @@ import {
   recognizeBeadPattern,
 } from "../domain/recognition";
 import { renderBeadProject } from "../domain/renderer";
-import { buildBeadFusionPreviewSvg } from "../domain/svgRenderer";
+import {
+  buildBeadFusionPreviewSvg,
+  buildBeadFusionSurfacePaths,
+} from "../domain/svgRenderer";
 import type {
   BeadWorkerRequest,
   BeadWorkerResponse,
@@ -68,11 +71,19 @@ export function processBeadWorkerRequest(
         }),
       };
     }
+    if (request.type === "render-preview") {
+      return {
+        id: request.id,
+        ok: true,
+        type: "render-preview",
+        result: buildBeadFusionPreviewSvg(request.project),
+      };
+    }
     return {
       id: request.id,
       ok: true,
-      type: "render-preview",
-      result: buildBeadFusionPreviewSvg(request.project),
+      type: "render-surface",
+      result: buildBeadFusionSurfacePaths(request.project),
     };
   } catch (error) {
     return {

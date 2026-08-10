@@ -78,6 +78,7 @@ const zhCN = {
   "workshop.bead.view.original": "原图",
   "workshop.bead.view.matrix": "识别矩阵",
   "workshop.bead.view.pressure": "压合预览",
+  "workshop.bead.view.three": "3D 预览",
   "workshop.bead.preview.source": "图纸原色",
   "workshop.bead.preview.print": "当前打印色库",
   "workshop.bead.printLibraryUnavailable":
@@ -94,6 +95,12 @@ const zhCN = {
   "workshop.bead.printLibraryLabel": "当前色库：{label}",
   "workshop.bead.matrixCanvas": "可编辑拼豆矩阵",
   "workshop.bead.pressureCanvas": "拼豆压合预览",
+  "workshop.bead.threeCanvas": "可旋转的拼豆 3D 预览",
+  "workshop.bead.threeFallbackCanvas": "拼豆二维压合预览（3D 安全降级）",
+  "workshop.bead.threeHint":
+    "拖动旋转、滚轮缩放；3D 与压合预览使用同一套挤压规则，并额外显示成品厚度、豆板和定位柱。",
+  "workshop.bead.threeLimitHint":
+    "当前图案有 {count} 颗豆，超过 {limit} 颗的交互式 3D 安全上限；已显示同规则的 2D 压合预览。",
   "workshop.bead.originalCanvas": "拼豆图纸原图",
   "workshop.bead.magnifier": "选中格局部放大",
   "workshop.bead.showGrid": "显示网格",
@@ -237,6 +244,7 @@ const enUS = {
   "workshop.bead.view.original": "Original",
   "workshop.bead.view.matrix": "Matrix",
   "workshop.bead.view.pressure": "Pressure preview",
+  "workshop.bead.view.three": "3D preview",
   "workshop.bead.preview.source": "Source colors",
   "workshop.bead.preview.print": "Current print library",
   "workshop.bead.printLibraryUnavailable":
@@ -254,6 +262,13 @@ const enUS = {
   "workshop.bead.printLibraryLabel": "Current library: {label}",
   "workshop.bead.matrixCanvas": "Editable bead matrix",
   "workshop.bead.pressureCanvas": "Bead pressure preview",
+  "workshop.bead.threeCanvas": "Rotatable 3D bead preview",
+  "workshop.bead.threeFallbackCanvas":
+    "2D pressure preview (3D safety fallback)",
+  "workshop.bead.threeHint":
+    "Drag to rotate and use the wheel to zoom. 3D uses the same fusion rules as the pressure preview and additionally shows finished thickness, the pegboard, and its pegs.",
+  "workshop.bead.threeLimitHint":
+    "This pattern contains {count} beads, above the {limit}-bead interactive 3D safety limit. The matching 2D pressure preview is shown instead.",
   "workshop.bead.originalCanvas": "Original bead pattern",
   "workshop.bead.magnifier": "Selected-cell magnifier",
   "workshop.bead.showGrid": "Show grid",

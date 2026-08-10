@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createBeadProject } from "../src/domain/project";
 import {
   BeadWorkerClient,
   BeadWorkerClientError,
@@ -51,6 +52,18 @@ function raster(): Raster {
       0, 0, 255, 255,
     ]),
   };
+}
+
+function beadProject() {
+  return createBeadProject({
+    projectId: "worker-surface",
+    moduleVersion: "1.0.8-dev.23",
+    now: "2026-08-11T00:00:00.000Z",
+    rows: 1,
+    columns: 1,
+    palette: [[230, 40, 50]],
+    cells: [{ kind: "color", paletteIndex: 0 }],
+  });
 }
 
 describe("bead worker client", () => {
@@ -131,6 +144,34 @@ describe("bead worker client", () => {
       posted.message.raster.data.buffer,
     ]);
     expect(source.data.byteLength).toBe(16);
+  });
+
+  it("posts and resolves the dedicated fusion-surface request", async () => {
+    const worker = new FakeWorker();
+    const client = new BeadWorkerClient(() => worker);
+    const project = beadProject();
+    const task = client.renderSurface(project);
+    const paths = [{
+      cellIndex: 0,
+      d: "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+      fill: "rgb(230,40,50)",
+      strokeWidth: 0,
+    }];
+
+    expect(worker.posted[0]?.message).toEqual({
+      id: task.id,
+      type: "render-surface",
+      project: { ...project, source: null },
+    });
+    worker.emit({
+      id: task.id,
+      ok: true,
+      type: "render-surface",
+      result: paths,
+    });
+
+    await expect(task.promise).resolves.toEqual(paths);
+    client.dispose();
   });
 
   it("rejects worker failures with a stable error code", async () => {

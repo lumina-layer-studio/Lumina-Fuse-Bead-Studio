@@ -19,15 +19,24 @@ import type { BeadProject, RgbColor } from "./types";
 
 const SVG_ORIGIN = "workshop-handoff";
 const RELIEF_SAMPLE_COUNT = 128;
+const SURFACE_CONTOUR_SAMPLE_COUNT = 24;
+const SURFACE_RELIEF_SAMPLE_COUNT = 16;
 const OWNER_DISTANCE_EPSILON = 1e-12;
 const TERMINAL_SEAM_STROKE_WIDTH = 0.02;
 
-const RELIEF_UNIT_CIRCLE = Array.from(
-  { length: RELIEF_SAMPLE_COUNT },
-  (_, index): FusionPoint => {
-    const angle = (Math.PI * 2 * index) / RELIEF_SAMPLE_COUNT;
-    return { x: Math.cos(angle), y: Math.sin(angle) };
-  },
+function unitCircle(sampleCount: number): FusionPoint[] {
+  return Array.from(
+    { length: sampleCount },
+    (_, index): FusionPoint => {
+      const angle = (Math.PI * 2 * index) / sampleCount;
+      return { x: Math.cos(angle), y: Math.sin(angle) };
+    },
+  );
+}
+
+const RELIEF_UNIT_CIRCLE = unitCircle(RELIEF_SAMPLE_COUNT);
+const SURFACE_RELIEF_UNIT_CIRCLE = unitCircle(
+  SURFACE_RELIEF_SAMPLE_COUNT,
 );
 
 export interface BeadFusionSvgPath {
@@ -224,8 +233,9 @@ function clippedContourPoints(
 function circlePolygon(
   center: FusionPoint,
   radius: number,
+  unitCirclePoints: readonly FusionPoint[] = RELIEF_UNIT_CIRCLE,
 ): Polygon {
-  const points = RELIEF_UNIT_CIRCLE.map(
+  const points = unitCirclePoints.map(
     (point): FusionPoint => ({
       x: center.x + point.x * radius,
       y: center.y + point.y * radius,
@@ -238,11 +248,16 @@ function reliefPolygons(
   contour: BeadFusionContour,
   geometry: BeadFusionGeometry,
   index: BeadFusionGeometryIndex,
+  unitCirclePoints: readonly FusionPoint[] = RELIEF_UNIT_CIRCLE,
 ): Polygon[] {
   const reliefs: Polygon[] = [];
   if (geometry.holeRadius > 0) {
     reliefs.push(
-      circlePolygon(contour.center, geometry.holeRadius),
+      circlePolygon(
+        contour.center,
+        geometry.holeRadius,
+        unitCirclePoints,
+      ),
     );
   }
   if (geometry.junctionRadius > 0) {
@@ -257,7 +272,11 @@ function reliefPolygons(
         );
         if (junction) {
           reliefs.push(
-            circlePolygon(junction, geometry.junctionRadius),
+            circlePolygon(
+              junction,
+              geometry.junctionRadius,
+              unitCirclePoints,
+            ),
           );
         }
       }
@@ -272,13 +291,19 @@ function printableContour(
   index: BeadFusionGeometryIndex,
   columns: number,
   rows: number,
+  unitCirclePoints: readonly FusionPoint[] = RELIEF_UNIT_CIRCLE,
 ): MultiPolygon {
   const owned = polygonClipping.intersection(
     [[asClosedRing(contour.points)]],
     ownershipRegion(contour, index, columns, rows),
   );
   if (owned.length === 0) return [];
-  const reliefs = reliefPolygons(contour, geometry, index);
+  const reliefs = reliefPolygons(
+    contour,
+    geometry,
+    index,
+    unitCirclePoints,
+  );
   return reliefs.length === 0
     ? owned
     : polygonClipping.difference(owned, ...reliefs);
@@ -390,14 +415,11 @@ export function buildBeadFusionPreviewSvg(
   };
 }
 
-function svgPathsForProject(
+function printablePathsForGeometry(
   project: BeadProject,
+  geometry: BeadFusionGeometry,
+  reliefUnitCircle: readonly FusionPoint[],
 ): BeadFusionSvgPath[] {
-  const geometry = buildBeadFusionGeometry(
-    project,
-    project.compression,
-    project.irregularity ?? 0,
-  );
   const geometryIndex = indexFusionGeometry(geometry);
   const pathsByFill = new Map<
     string,
@@ -414,6 +436,7 @@ function svgPathsForProject(
         geometryIndex,
         project.columns,
         project.rows,
+        reliefUnitCircle,
       ),
     );
     if (d.length === 0) continue;
@@ -440,6 +463,47 @@ function svgPathsForProject(
           : 0,
     }),
   );
+}
+
+function svgPathsForProject(
+  project: BeadProject,
+): BeadFusionSvgPath[] {
+  const geometry = buildBeadFusionGeometry(
+    project,
+    project.compression,
+    project.irregularity ?? 0,
+  );
+  return printablePathsForGeometry(
+    project,
+    geometry,
+    RELIEF_UNIT_CIRCLE,
+  );
+}
+
+function surfacePathsForProject(
+  project: BeadProject,
+): BeadFusionSvgPath[] {
+  const geometry = buildBeadFusionGeometry(
+    project,
+    project.compression,
+    project.irregularity ?? 0,
+    SURFACE_CONTOUR_SAMPLE_COUNT,
+  );
+  return printablePathsForGeometry(
+    project,
+    geometry,
+    SURFACE_RELIEF_UNIT_CIRCLE,
+  );
+}
+
+/**
+ * Builds low-detail canonical fusion surfaces for interactive 3D extrusion.
+ * 构建供交互式三维挤出使用的低细节标准压合表面。
+ */
+export function buildBeadFusionSurfacePaths(
+  input: BeadProject,
+): BeadFusionSvgPath[] {
+  return surfacePathsForProject(validateBeadProject(input));
 }
 
 export function buildBeadFusionSvgPaths(

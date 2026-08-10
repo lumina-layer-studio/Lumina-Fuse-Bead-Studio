@@ -26,8 +26,13 @@ import {
 import { BeadMatrixCanvas } from "./BeadMatrixCanvas";
 import { BeadFusionPreview } from "./BeadFusionPreview";
 import { BeadSourceCanvas } from "./BeadSourceCanvas";
+import {
+  BeadThreePreview,
+  MAX_THREE_PREVIEW_BEADS,
+  supportsBeadThreePreviewCount,
+} from "./BeadThreePreview";
 
-type EditorView = "original" | "matrix" | "pressure";
+type EditorView = "original" | "matrix" | "pressure" | "three";
 
 interface BeadEditorStepProps {
   state: BeadEditorState;
@@ -167,6 +172,17 @@ export function BeadEditorStep({
   const hasColoredBeads = useMemo(
     () => project.cells.some((cell) => cell.kind === "color"),
     [project.cells],
+  );
+  const coloredBeadCount = useMemo(
+    () =>
+      project.cells.reduce(
+        (count, cell) => count + (cell.kind === "color" ? 1 : 0),
+        0,
+      ),
+    [project.cells],
+  );
+  const supportsThreePreview = supportsBeadThreePreviewCount(
+    coloredBeadCount,
   );
   const hasCurrentPrintMapping =
     colorLibrary !== null &&
@@ -631,7 +647,7 @@ export function BeadEditorStep({
 
         <section className="panel panel--canvas">
           <div className="view-tabs">
-            {(["original", "matrix", "pressure"] as const).map(
+            {(["original", "matrix", "pressure", "three"] as const).map(
               (candidate) => (
                 <button
                   key={candidate}
@@ -663,6 +679,28 @@ export function BeadEditorStep({
                 project={displayProject}
                 ariaLabel={t("workshop.bead.pressureCanvas")}
               />
+            ) : view === "three" ? (
+              <div className="bead-three-preview-stack">
+                <BeadThreePreview
+                  project={displayProject}
+                  ariaLabel={t(
+                    supportsThreePreview
+                      ? "workshop.bead.threeCanvas"
+                      : "workshop.bead.threeFallbackCanvas",
+                  )}
+                />
+                <p className="bead-three-preview__hint">
+                  {supportsThreePreview
+                    ? t("workshop.bead.threeHint")
+                    : interpolate(
+                        t("workshop.bead.threeLimitHint"),
+                        {
+                          count: coloredBeadCount,
+                          limit: MAX_THREE_PREVIEW_BEADS,
+                        },
+                      )}
+                </p>
+              </div>
             ) : (
               <BeadMatrixCanvas
                 project={displayProject}

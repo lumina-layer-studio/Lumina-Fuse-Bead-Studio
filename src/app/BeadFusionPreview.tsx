@@ -35,16 +35,24 @@ export function BeadFusionPreview({
     createPreviewRenderer ?? createBeadFusionPreviewRenderer;
   useEffect(() => {
     let active = true;
-    const renderer = rendererFactory();
-    void renderer
-      .render(project)
-      .then((result) => {
-        if (active) setPreview(result);
-      })
-      .catch(() => undefined);
+    let renderer: BeadFusionPreviewRenderer | null = null;
+    const renderLocalFallback = () => {
+      if (active) setPreview(buildBeadFusionPreviewSvg(project));
+    };
+    try {
+      renderer = rendererFactory();
+      void renderer
+        .render(project)
+        .then((result) => {
+          if (active) setPreview(result);
+        })
+        .catch(renderLocalFallback);
+    } catch {
+      renderLocalFallback();
+    }
     return () => {
       active = false;
-      renderer.dispose();
+      renderer?.dispose();
     };
   }, [project, rendererFactory]);
   const maskId = `bead-relief-${useId().replaceAll(":", "")}`;

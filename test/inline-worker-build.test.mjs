@@ -7,6 +7,10 @@ test("build contains the worker and every runtime asset in one HTML file", async
   assert.deepEqual(files, ["index.html"]);
 
   const html = await readFile("dist/ui/index.html", "utf8");
+  assert.ok(
+    Buffer.byteLength(html, "utf8") <= 1_200_000,
+    "dist/ui/index.html must remain at or below the 1,200,000 byte delivery budget",
+  );
   assert.doesNotMatch(html, /<script[^>]+src=/i);
   assert.doesNotMatch(html, /new Worker\(["'][^"']+\.js/i);
   assert.match(
