@@ -185,6 +185,162 @@ describe("BeadEditorStep", () => {
     ]);
   });
 
+  it("hosts the editor in one workspace while dock presentation stays outside business dispatch", () => {
+    const state = createBeadEditorState(project());
+    const dispatch = vi.fn<(action: BeadEditorAction) => void>();
+    render(
+      <BeadEditorStep
+        state={state}
+        sourceRaster={null}
+        translate={t}
+        dispatch={dispatch}
+        onNewProject={vi.fn()}
+      />,
+    );
+
+    const workspace = screen.getByTestId("bead-editor-workspace");
+    expect(
+      screen.getByRole("heading", { name: "编辑" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "参数与输出" }),
+    ).toBeInTheDocument();
+    const editorHeadings = screen.getAllByRole("heading", {
+      name: "编辑拼豆矩阵",
+    });
+    expect(editorHeadings).toHaveLength(1);
+    expect(editorHeadings[0].tagName).toBe("H1");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "收起编辑控件" }),
+    );
+    expect(workspace).toHaveAttribute("data-left-collapsed", "true");
+    const collapsedEditorHeadings = screen.getAllByRole("heading", {
+      name: "编辑拼豆矩阵",
+    });
+    expect(collapsedEditorHeadings).toHaveLength(1);
+    expect(collapsedEditorHeadings[0].tagName).toBe("H1");
+    expect(
+      screen.getByRole("img", { name: "可编辑拼豆矩阵" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "展开编辑控件" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "画笔" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("preserves the pressure view while the inspector dock collapses and expands", () => {
+    render(
+      <BeadEditorStep
+        state={createBeadEditorState(project())}
+        sourceRaster={null}
+        translate={t}
+        dispatch={vi.fn()}
+        onNewProject={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "压合预览" }),
+    );
+    const pressureButton = screen.getByRole("button", {
+      name: "压合预览",
+    });
+    expect(pressureButton).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("img", { name: "拼豆压合预览" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "收起参数控件" }),
+    );
+    expect(screen.getByTestId("bead-editor-workspace")).toHaveAttribute(
+      "data-right-collapsed",
+      "true",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "展开参数控件" }),
+    );
+
+    expect(pressureButton).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("img", { name: "拼豆压合预览" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps library identity and mapping callbacks available in the inspector", () => {
+    const colorLibrary = {
+      id: "lut:current",
+      label: "当前测试色库",
+      sourceKind: "lut" as const,
+      colors: [
+        {
+          id: "print-red",
+          label: "打印红",
+          hex: "#E62832",
+          materialId: null,
+        },
+        {
+          id: "print-blue",
+          label: "打印蓝",
+          hex: "#1478D2",
+          materialId: null,
+        },
+      ],
+    };
+    const onRefreshPrintMapping = vi.fn();
+    const onSetPrintMappingEntry = vi.fn();
+    const { rerender } = render(
+      <BeadEditorStep
+        state={createBeadEditorState(project())}
+        sourceRaster={null}
+        translate={t}
+        dispatch={vi.fn()}
+        onNewProject={vi.fn()}
+        colorLibrary={colorLibrary}
+        printMapping={null}
+        onRefreshPrintMapping={onRefreshPrintMapping}
+      />,
+    );
+
+    expect(screen.getByText("当前色库：当前测试色库")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "生成打印色映射" }),
+    );
+    expect(onRefreshPrintMapping).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <BeadEditorStep
+        state={createBeadEditorState(project())}
+        sourceRaster={null}
+        translate={t}
+        dispatch={vi.fn()}
+        onNewProject={vi.fn()}
+        colorLibrary={colorLibrary}
+        printMapping={{
+          libraryId: colorLibrary.id,
+          libraryLabel: colorLibrary.label,
+          entries: [
+            { sourcePaletteIndex: 0, colorEntryId: "print-red" },
+            { sourcePaletteIndex: 1, colorEntryId: "print-blue" },
+          ],
+        }}
+        onSetPrintMappingEntry={onSetPrintMappingEntry}
+      />,
+    );
+
+    expect(screen.getByText("当前色库：当前测试色库")).toBeInTheDocument();
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "作品颜色 2" }),
+      { target: { value: "print-red" } },
+    );
+    expect(onSetPrintMappingEntry).toHaveBeenCalledWith(1, "print-red");
+  });
+
   it("explains when an oversized project uses the 2D pressure fallback", () => {
     const rows = 65;
     const columns = 64;

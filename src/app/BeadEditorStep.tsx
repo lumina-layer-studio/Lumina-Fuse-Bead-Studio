@@ -19,10 +19,10 @@ import Checkbox from "../ui/Checkbox";
 import HelpDot from "../ui/HelpDot";
 import Slider from "../ui/Slider";
 import {
-  PanelIntro,
   StatusBanner,
   workstationInputClass,
 } from "../ui/panelPrimitives";
+import { BeadEditorWorkspace } from "./BeadEditorWorkspace";
 import { BeadMatrixCanvas } from "./BeadMatrixCanvas";
 import { BeadFusionPreview } from "./BeadFusionPreview";
 import { BeadSourceCanvas } from "./BeadSourceCanvas";
@@ -257,12 +257,53 @@ export function BeadEditorStep({
   ];
 
   return (
-    <div className="workbench-stack">
-      <PanelIntro
-        eyebrow={`${project.columns} × ${project.rows}`}
-        title={t("workshop.bead.editorTitle")}
-        description={t("workshop.bead.editorDescription")}
-        action={
+    <BeadEditorWorkspace
+      labels={{
+        views: t("workshop.bead.floating.views"),
+        edit: t("workshop.bead.floating.edit"),
+        inspector: t("workshop.bead.floating.inspector"),
+        collapseEdit: t("workshop.bead.floating.collapseEdit"),
+        expandEdit: t("workshop.bead.floating.expandEdit"),
+        collapseInspector: t(
+          "workshop.bead.floating.collapseInspector",
+        ),
+        expandInspector: t(
+          "workshop.bead.floating.expandInspector",
+        ),
+        openEdit: t("workshop.bead.floating.openEdit"),
+        openInspector: t("workshop.bead.floating.openInspector"),
+      }}
+      viewControls={
+        <div className="view-tabs">
+          {(["original", "matrix", "pressure", "three"] as const).map(
+            (candidate) => (
+              <button
+                key={candidate}
+                type="button"
+                aria-pressed={view === candidate}
+                disabled={candidate === "original" && sourceRaster === null}
+                className="segmented-control"
+                onClick={() => setView(candidate)}
+              >
+                {t(`workshop.bead.view.${candidate}`)}
+              </button>
+            ),
+          )}
+        </div>
+      }
+      editControls={
+        <>
+          <header className="bead-editor-project-summary">
+            <p className="panel-intro__eyebrow">
+              {project.columns} × {project.rows}
+            </p>
+            <p className="bead-editor-project-title">
+              {t("workshop.bead.editorTitle")}
+            </p>
+            <p className="panel-intro__description">
+              {t("workshop.bead.editorDescription")}
+            </p>
+          </header>
           <div className="control-row">
             {sourceRaster !== null && onReturnCalibration ? (
               <Button
@@ -277,11 +318,7 @@ export function BeadEditorStep({
               onClick={onNewProject}
             />
           </div>
-        }
-      />
 
-      <div className="workbench-layout">
-        <aside className="panel panel--controls">
           <div className="preview-mode">
             <p className="field-label">
               {t("workshop.bead.printMappingTitle")}
@@ -309,99 +346,7 @@ export function BeadEditorStep({
                 {t("workshop.bead.preview.print")}
               </button>
             </div>
-            {colorLibrary ? (
-              <p className="sample-summary">
-                {interpolate(
-                  t("workshop.bead.printLibraryLabel"),
-                  { label: colorLibrary.label },
-                )}
-              </p>
-            ) : (
-              <div className="mapping-action">
-                <StatusBanner>
-                  {t("workshop.bead.printLibraryUnavailable")}
-                </StatusBanner>
-                <Button
-                  label={t("workshop.bead.reloadPrintLibrary")}
-                  variant="secondary"
-                  size="small"
-                  loading={colorLibraryRefreshing}
-                  onClick={onReloadColorLibrary}
-                />
-              </div>
-            )}
-            {colorLibrary && !printMapping ? (
-              <div className="mapping-action">
-                <p className="sample-summary">
-                  {t("workshop.bead.printMappingRequired")}
-                </p>
-                <Button
-                  label={t("workshop.bead.createPrintMapping")}
-                  variant="secondary"
-                  size="small"
-                  onClick={onRefreshPrintMapping}
-                />
-              </div>
-            ) : null}
-            {colorLibrary && printMappingStale ? (
-              <div className="mapping-action">
-                <StatusBanner tone="warning">
-                  {t("workshop.bead.printMappingStale")}
-                </StatusBanner>
-                <Button
-                  label={t("workshop.bead.refreshPrintMapping")}
-                  variant="secondary"
-                  size="small"
-                  onClick={onRefreshPrintMapping}
-                />
-              </div>
-            ) : null}
           </div>
-
-          {colorLibrary && hasCurrentPrintMapping ? (
-            <div className="print-mapping-list">
-              {project.palette.map((sourceColor, index) => (
-                <label className="print-mapping-row" key={index}>
-                  <span
-                    className="print-mapping-row__source"
-                    aria-hidden
-                    style={{
-                      backgroundColor: `rgb(${sourceColor[0]} ${sourceColor[1]} ${sourceColor[2]})`,
-                    }}
-                  />
-                  <span className="field-label">
-                    {interpolate(
-                      t("workshop.bead.printColorFor"),
-                      { index: index + 1 },
-                    )}
-                  </span>
-                  <select
-                    className={workstationInputClass}
-                    aria-label={interpolate(
-                      t("workshop.bead.printColorFor"),
-                      { index: index + 1 },
-                    )}
-                    value={mappingByPaletteIndex.get(index) ?? ""}
-                    onChange={(event) =>
-                      onSetPrintMappingEntry?.(
-                        index,
-                        event.target.value,
-                      )
-                    }
-                  >
-                    {colorLibrary.colors.map((entry, entryIndex) => (
-                      <option
-                        key={`${entry.id}-${entryIndex}`}
-                        value={entry.id}
-                      >
-                        {entry.label} · {entry.hex}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
-            </div>
-          ) : null}
 
           <section className="editor-tool-section">
             <p className="field-label">
@@ -524,6 +469,103 @@ export function BeadEditorStep({
             </div>
           </div>
 
+          <Checkbox
+            label={t("workshop.bead.showGrid")}
+            checked={showGrid}
+            onChange={setShowGrid}
+          />
+        </>
+      }
+      inspectorControls={
+        <>
+          {colorLibrary ? (
+            <p className="sample-summary">
+              {interpolate(t("workshop.bead.printLibraryLabel"), {
+                label: colorLibrary.label,
+              })}
+            </p>
+          ) : (
+            <div className="mapping-action">
+              <StatusBanner>
+                {t("workshop.bead.printLibraryUnavailable")}
+              </StatusBanner>
+              <Button
+                label={t("workshop.bead.reloadPrintLibrary")}
+                variant="secondary"
+                size="small"
+                loading={colorLibraryRefreshing}
+                onClick={onReloadColorLibrary}
+              />
+            </div>
+          )}
+          {colorLibrary && !printMapping ? (
+            <div className="mapping-action">
+              <p className="sample-summary">
+                {t("workshop.bead.printMappingRequired")}
+              </p>
+              <Button
+                label={t("workshop.bead.createPrintMapping")}
+                variant="secondary"
+                size="small"
+                onClick={onRefreshPrintMapping}
+              />
+            </div>
+          ) : null}
+          {colorLibrary && printMappingStale ? (
+            <div className="mapping-action">
+              <StatusBanner tone="warning">
+                {t("workshop.bead.printMappingStale")}
+              </StatusBanner>
+              <Button
+                label={t("workshop.bead.refreshPrintMapping")}
+                variant="secondary"
+                size="small"
+                onClick={onRefreshPrintMapping}
+              />
+            </div>
+          ) : null}
+
+          {colorLibrary && hasCurrentPrintMapping ? (
+            <div className="print-mapping-list">
+              {project.palette.map((sourceColor, index) => (
+                <label className="print-mapping-row" key={index}>
+                  <span
+                    className="print-mapping-row__source"
+                    aria-hidden
+                    style={{
+                      backgroundColor: `rgb(${sourceColor[0]} ${sourceColor[1]} ${sourceColor[2]})`,
+                    }}
+                  />
+                  <span className="field-label">
+                    {interpolate(t("workshop.bead.printColorFor"), {
+                      index: index + 1,
+                    })}
+                  </span>
+                  <select
+                    className={workstationInputClass}
+                    aria-label={interpolate(
+                      t("workshop.bead.printColorFor"),
+                      { index: index + 1 },
+                    )}
+                    value={mappingByPaletteIndex.get(index) ?? ""}
+                    onChange={(event) =>
+                      onSetPrintMappingEntry?.(index, event.target.value)
+                    }
+                  >
+                    {colorLibrary.colors.map((entry, entryIndex) => (
+                      <option
+                        key={`${entry.id}-${entryIndex}`}
+                        value={entry.id}
+                      >
+                        {entry.label} · {entry.hex}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          ) : null}
+
           <Slider
             label={t("workshop.bead.compression")}
             tooltip={t("workshop.bead.compressionHint")}
@@ -637,34 +679,13 @@ export function BeadEditorStep({
               className="button--full"
             />
           ) : null}
-
-          <Checkbox
-            label={t("workshop.bead.showGrid")}
-            checked={showGrid}
-            onChange={setShowGrid}
-          />
-        </aside>
-
-        <section className="panel panel--canvas">
-          <div className="view-tabs">
-            {(["original", "matrix", "pressure", "three"] as const).map(
-              (candidate) => (
-                <button
-                  key={candidate}
-                  type="button"
-                  aria-pressed={view === candidate}
-                  disabled={
-                    candidate === "original" && sourceRaster === null
-                  }
-                  className="segmented-control"
-                  onClick={() => setView(candidate)}
-                >
-                  {t(`workshop.bead.view.${candidate}`)}
-                </button>
-              ),
-            )}
-          </div>
-
+        </>
+      }
+      canvas={
+        <>
+          <h1 className="bead-editor-workspace__title">
+            {t("workshop.bead.editorTitle")}
+          </h1>
           <div className="canvas-stage">
             {view === "original" && sourceRaster && sourceGeometry ? (
               <BeadSourceCanvas
@@ -692,13 +713,10 @@ export function BeadEditorStep({
                 <p className="bead-three-preview__hint">
                   {supportsThreePreview
                     ? t("workshop.bead.threeHint")
-                    : interpolate(
-                        t("workshop.bead.threeLimitHint"),
-                        {
-                          count: coloredBeadCount,
-                          limit: MAX_THREE_PREVIEW_BEADS,
-                        },
-                      )}
+                    : interpolate(t("workshop.bead.threeLimitHint"), {
+                        count: coloredBeadCount,
+                        limit: MAX_THREE_PREVIEW_BEADS,
+                      })}
                 </p>
               </div>
             ) : (
@@ -708,31 +726,31 @@ export function BeadEditorStep({
                 selectedCellIndex={state.selectedCellIndex}
                 onPickCell={applyAt}
                 allowDrag={
-                  state.activeTool === "paint" ||
-                  state.activeTool === "erase"
+                  state.activeTool === "paint" || state.activeTool === "erase"
                 }
                 ariaLabel={t("workshop.bead.matrixCanvas")}
               />
             )}
           </div>
-
-          {state.selectedCellIndex !== null ? (
-            <div className="magnifier">
-              <p>{t("workshop.bead.magnifier")}</p>
-              <BeadMatrixCanvas
-                project={displayProject}
-                ariaLabel={t("workshop.bead.magnifier")}
-                showGrid
-                selectedCellIndex={state.selectedCellIndex}
-                viewport={{
-                  centerCellIndex: state.selectedCellIndex,
-                  radius: 2,
-                }}
-              />
-            </div>
-          ) : null}
-        </section>
-      </div>
-    </div>
+        </>
+      }
+      magnifier={
+        state.selectedCellIndex !== null ? (
+          <div className="magnifier">
+            <p>{t("workshop.bead.magnifier")}</p>
+            <BeadMatrixCanvas
+              project={displayProject}
+              ariaLabel={t("workshop.bead.magnifier")}
+              showGrid
+              selectedCellIndex={state.selectedCellIndex}
+              viewport={{
+                centerCellIndex: state.selectedCellIndex,
+                radius: 2,
+              }}
+            />
+          </div>
+        ) : undefined
+      }
+    />
   );
 }

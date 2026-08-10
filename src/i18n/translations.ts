@@ -55,6 +55,15 @@ const zhCN = {
   "workshop.bead.editorTitle": "编辑拼豆矩阵",
   "workshop.bead.editorDescription":
     "修正识别结果，再调节压合程度；用橡皮擦清除不需要的豆子。",
+  "workshop.bead.floating.views": "视图",
+  "workshop.bead.floating.edit": "编辑",
+  "workshop.bead.floating.inspector": "参数与输出",
+  "workshop.bead.floating.collapseEdit": "收起编辑控件",
+  "workshop.bead.floating.expandEdit": "展开编辑控件",
+  "workshop.bead.floating.collapseInspector": "收起参数控件",
+  "workshop.bead.floating.expandInspector": "展开参数控件",
+  "workshop.bead.floating.openEdit": "打开编辑控件",
+  "workshop.bead.floating.openInspector": "打开参数控件",
   "workshop.bead.toolsTitle": "编辑工具",
   "workshop.bead.paletteTitle": "颜色",
   "workshop.bead.tool.paint": "画笔",
@@ -219,6 +228,17 @@ const enUS = {
   "workshop.bead.editorTitle": "Edit bead matrix",
   "workshop.bead.editorDescription":
     "Correct the recognized matrix, adjust pressure, and erase beads you do not need.",
+  "workshop.bead.floating.views": "Views",
+  "workshop.bead.floating.edit": "Edit",
+  "workshop.bead.floating.inspector": "Parameters & output",
+  "workshop.bead.floating.collapseEdit": "Collapse edit controls",
+  "workshop.bead.floating.expandEdit": "Expand edit controls",
+  "workshop.bead.floating.collapseInspector":
+    "Collapse parameter controls",
+  "workshop.bead.floating.expandInspector":
+    "Expand parameter controls",
+  "workshop.bead.floating.openEdit": "Open edit controls",
+  "workshop.bead.floating.openInspector": "Open parameter controls",
   "workshop.bead.toolsTitle": "Editing tools",
   "workshop.bead.paletteTitle": "Colors",
   "workshop.bead.tool.paint": "Paint",
