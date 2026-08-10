@@ -41,7 +41,7 @@ interface BeadEditorStepProps {
   dispatch(action: BeadEditorAction): void;
   onNewProject(): void;
   onReturnCalibration?(): void;
-  onHandoff?(): void;
+  onHandoff?(trigger: HTMLButtonElement): void;
   handoffBusy?: boolean;
   colorLibrary?: WorkshopColorLibrary | null;
   colorLibraryRefreshing?: boolean;
@@ -668,7 +668,7 @@ export function BeadEditorStep({
           {onHandoff ? (
             <Button
               label={t("workshop.bead.handoff")}
-              onClick={onHandoff}
+              onClick={(event) => onHandoff(event.currentTarget)}
               loading={handoffBusy}
               disabled={!hasColoredBeads}
               title={

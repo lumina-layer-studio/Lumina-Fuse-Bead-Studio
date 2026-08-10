@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import Button from "../ui/Button";
+import { useModalFocus } from "./useModalFocus";
 
 interface BeadHandoffConfirmDialogProps {
   open: boolean;
@@ -18,14 +19,9 @@ export function BeadHandoffConfirmDialog({
   onCancel,
   onConfirm,
 }: BeadHandoffConfirmDialogProps) {
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onCancel();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, onCancel, open]);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const titleId = `bead-handoff-confirm-title-${useId()}`;
+  useModalFocus({ open, busy, dialogRef, onCancel });
 
   if (!open) return null;
 
@@ -35,14 +31,16 @@ export function BeadHandoffConfirmDialog({
       onClick={busy ? undefined : onCancel}
     >
       <section
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="bead-handoff-confirm-title"
+        aria-labelledby={titleId}
         className="dialog"
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="dialog__body">
-          <h2 id="bead-handoff-confirm-title">
+          <h2 id={titleId}>
             {t("workshop.bead.replaceTitle")}
           </h2>
           <p>{t("workshop.bead.replaceDescription")}</p>

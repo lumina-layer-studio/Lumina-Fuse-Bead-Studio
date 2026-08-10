@@ -2005,6 +2005,93 @@ describe("BeadWorkshopModule", () => {
     harness.close();
   });
 
+  it("keeps both handoff dialogs modal and restores the original handoff trigger", async () => {
+    const project = projectWithSource();
+    const harness = createSdkHarness({
+      latestProject: storedProjectRecord(project),
+      handoffStatuses: ["needs-confirmation"],
+    });
+    const client = await harness.connect();
+    mountWorkshop(client, new FakeEngine(), imageCodecFor(sourceRaster(30, 20)));
+
+    await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+    const handoffTrigger = screen.getByRole("button", {
+      name: "交给 Lumina 转换",
+    });
+    handoffTrigger.focus();
+    expect(handoffTrigger).toHaveFocus();
+
+    fireEvent.click(handoffTrigger);
+    const summaryDialog = await screen.findByRole("dialog", {
+      name: "确认交给 Lumina 转换？",
+    });
+    await waitFor(() =>
+      expect(summaryDialog).toContainElement(document.activeElement as HTMLElement),
+    );
+
+    const summaryCancel = screen.getByRole("button", { name: "返回编辑" });
+    const summaryConfirm = screen.getByRole("button", {
+      name: "继续交给 Lumina",
+    });
+    summaryCancel.focus();
+    fireEvent.keyDown(summaryCancel, { key: "Tab", shiftKey: true });
+    expect(summaryConfirm).toHaveFocus();
+    fireEvent.keyDown(summaryConfirm, { key: "Tab" });
+    expect(summaryCancel).toHaveFocus();
+
+    fireEvent.keyDown(summaryCancel, { key: "Escape" });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", {
+          name: "确认交给 Lumina 转换？",
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(handoffTrigger).toHaveFocus());
+
+    fireEvent.click(handoffTrigger);
+    await screen.findByRole("dialog", {
+      name: "确认交给 Lumina 转换？",
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "继续交给 Lumina" }),
+    );
+
+    const replacementDialog = await screen.findByRole("dialog", {
+      name: "替换当前转换内容？",
+    });
+    await waitFor(() =>
+      expect(replacementDialog).toContainElement(
+        document.activeElement as HTMLElement,
+      ),
+    );
+
+    const replacementCancel = screen.getByRole("button", {
+      name: "暂不替换",
+    });
+    const replacementConfirm = screen.getByRole("button", {
+      name: "替换并继续",
+    });
+    replacementCancel.focus();
+    fireEvent.keyDown(replacementCancel, { key: "Tab", shiftKey: true });
+    expect(replacementConfirm).toHaveFocus();
+    fireEvent.keyDown(replacementConfirm, { key: "Tab" });
+    expect(replacementCancel).toHaveFocus();
+
+    fireEvent.keyDown(replacementCancel, { key: "Escape" });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", {
+          name: "替换当前转换内容？",
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(handoffTrigger).toHaveFocus());
+
+    client.close();
+    harness.close();
+  });
+
   it("does not rasterize an editor preview that is rendered from native SVG", async () => {
     const project = projectWithSource();
     const engine = new FakeEngine();

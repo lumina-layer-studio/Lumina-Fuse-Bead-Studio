@@ -345,6 +345,8 @@ export function BeadWorkshopModule({
   const colorLibraryRequestRef = useRef(0);
   const colorLibraryFlightRef =
     useRef<Promise<WorkshopColorLibrary | null> | null>(null);
+  const handoffReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const handoffFlowActiveRef = useRef(false);
   const lifecycleEpochRef = useRef(0);
   const pickRequestRef = useRef(0);
   const processingEpochRef = useRef(0);
@@ -1009,7 +1011,30 @@ export function BeadWorkshopModule({
   const sendHandoff = async (handoff: PreparedBeadHandoff) =>
     handoffPreparedBeadImage(client, handoff);
 
-  const handleHandoff = async () => {
+  useEffect(() => {
+    if (
+      !handoffFlowActiveRef.current ||
+      handoffBusy ||
+      handoffSummary !== null ||
+      pendingReplacement !== null
+    ) {
+      return;
+    }
+
+    handoffFlowActiveRef.current = false;
+    const returnFocusTarget = handoffReturnFocusRef.current;
+    handoffReturnFocusRef.current = null;
+    queueMicrotask(() => {
+      if (
+        returnFocusTarget?.isConnected &&
+        !returnFocusTarget.disabled
+      ) {
+        returnFocusTarget.focus();
+      }
+    });
+  }, [handoffBusy, handoffSummary, pendingReplacement]);
+
+  const handleHandoff = async (returnFocusTarget: HTMLButtonElement) => {
     const project = editorState?.present;
     if (
       !project ||
@@ -1019,6 +1044,8 @@ export function BeadWorkshopModule({
       return;
     }
 
+    handoffReturnFocusRef.current = returnFocusTarget;
+    handoffFlowActiveRef.current = true;
     setHandoffBusy(true);
     clearVisibleError();
     ignoreFailure(
