@@ -12,11 +12,8 @@ const PALETTE = [
 ] as const;
 
 function cellFromSeed(seed: number): BeadCell {
-  if (seed % 5 === 0) {
+  if (seed % 5 <= 1) {
     return { kind: "empty" };
-  }
-  if (seed % 5 === 1) {
-    return { kind: "transparent-support" };
   }
   return {
     kind: "color",

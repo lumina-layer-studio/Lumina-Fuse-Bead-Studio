@@ -28,6 +28,8 @@ const zhCN = {
   "workshop.bead.classifying": "正在分析图纸类型…",
   "workshop.bead.classificationUnavailable":
     "未能自动判断图纸类型，请手动确认。",
+  "workshop.bead.cropRequired":
+    "检测到截图边框、多图布局或图纸未完整显示，请先裁剪并只保留一张完整图纸。",
   "workshop.bead.rows": "行数",
   "workshop.bead.columns": "列数",
   "workshop.bead.originX": "网格原点 X",
@@ -39,11 +41,8 @@ const zhCN = {
     "请先选择一个空位样本，或明确图中没有空位。",
   "workshop.bead.pickEmpty": "选择一个空位",
   "workshop.bead.noEmpty": "图中没有空位",
-  "workshop.bead.pickSupport": "选择透明支撑",
-  "workshop.bead.clearSupport": "清除透明支撑样本",
   "workshop.bead.emptySample": "空位样本：第 {index} 格",
   "workshop.bead.noEmptySelected": "已确认：图中没有空位",
-  "workshop.bead.supportSample": "透明支撑样本：第 {index} 格",
   "workshop.bead.rotate0": "旋转 0°",
   "workshop.bead.rotate90": "旋转 90°",
   "workshop.bead.rotate180": "旋转 180°",
@@ -55,12 +54,22 @@ const zhCN = {
   "workshop.bead.calibrationCanvas": "拼豆图纸网格校准",
   "workshop.bead.editorTitle": "编辑拼豆矩阵",
   "workshop.bead.editorDescription":
-    "修正识别结果，再调节压合程度。透明支撑参与挤压，但不会进入最终图像颜色。",
+    "修正识别结果，再调节压合程度；用橡皮擦清除不需要的豆子。",
+  "workshop.bead.toolsTitle": "编辑工具",
+  "workshop.bead.paletteTitle": "颜色",
   "workshop.bead.tool.paint": "画笔",
   "workshop.bead.tool.erase": "橡皮",
+  "workshop.bead.tool.eraseFill": "区域擦除",
   "workshop.bead.tool.eyedropper": "吸管",
   "workshop.bead.tool.fill": "填充",
-  "workshop.bead.tool.support": "透明支撑",
+  "workshop.bead.toolHint.paint": "点击或拖动格子，使用当前颜色补豆。",
+  "workshop.bead.toolHint.erase": "点击或拖动格子，逐颗移除豆子。",
+  "workshop.bead.toolHint.eraseFill":
+    "点击色块，一次清空与它上下左右相连的同色区域。",
+  "workshop.bead.toolHint.eyedropper":
+    "点击格子取色，并自动切换到画笔或橡皮。",
+  "workshop.bead.toolHint.fill":
+    "点击色块，使用当前颜色填满与它上下左右相连的同色区域。",
   "workshop.bead.undo": "撤销",
   "workshop.bead.redo": "重做",
   "workshop.bead.previousIssue": "上一个待复核格",
@@ -92,17 +101,19 @@ const zhCN = {
   "workshop.bead.customColor": "添加自定义颜色",
   "workshop.bead.compression": "压合程度",
   "workshop.bead.compressionHint":
-    "0 保留中心孔和豆间缝，50 保留细小十字或菱形凹点，100 完全压紧闭合。",
-  "workshop.bead.pressureLight": "0 · 轻压有孔",
-  "workshop.bead.pressureStandard": "50 · 标准",
-  "workshop.bead.pressureTight": "100 · 紧压无孔",
+    "综合模拟热量、时间与压力：0 是紧密排列并保留孔的豆子，50 接触熔合并保留孔，接近 90 时只留微孔与交汇凹点，100 是平熔无孔；外圈仍保留受挤压的豆形波峰。",
+  "workshop.bead.pressureLight": "0 · 紧密有孔",
+  "workshop.bead.pressureStandard": "50 · 标准熔合",
+  "workshop.bead.pressureTight": "100 · 平熔无孔",
   "workshop.bead.irregularity": "不规则挤压",
   "workshop.bead.irregularityHint":
-    "关闭时保持标准豆板网格；开启后整颗豆子连同孔位做轻微固定偏移，让接缝略微倾斜，不会产生随机闪动。",
+    "关闭时保持标准豆板网格；开启后会按固定规律轻微改变豆心、色界流动和外圈波峰深浅，越接近熔合状态越明显，不会随机闪动或把豆子扭成异形。",
   "workshop.bead.beadPitch": "单豆节距",
   "workshop.bead.beadPitchHint":
     "默认 2.6 mm，表示相邻豆子中心间距，并决定交给 Lumina 的真实画布尺寸。",
   "workshop.bead.physicalSize": "{width} × {height} mm",
+  "workshop.bead.estimatedThickness":
+    "预计成品厚度：{thickness} mm（中间档为估算；100% 无孔以一元硬币厚度为基准）",
   "workshop.bead.rendering": "正在计算高分辨率压合预览…",
   "workshop.bead.newProject": "新建图纸",
   "workshop.bead.returnCalibration": "返回校准",
@@ -110,9 +121,9 @@ const zhCN = {
   "workshop.bead.handoffEmpty": "至少保留一颗有颜色的拼豆后才能转换",
   "workshop.bead.handoffSummaryTitle": "确认交给 Lumina 转换？",
   "workshop.bead.handoffSummaryDescription":
-    "将发送作品原色 PNG；当前打印色库只作为映射来源记录，不会替换图纸颜色。",
+    "将优先发送作品原色 SVG，并附带兼容 PNG；当前打印色库只作为映射来源记录，不会替换图纸颜色。",
   "workshop.bead.handoffSummary":
-    "{columns} × {rows} 格 · {width} × {height} mm · 压合 {compression}% · 不规则 {irregularity}%",
+    "{columns} × {rows} 格 · {width} × {height} × {thickness} mm · 压合 {compression}% · 不规则 {irregularity}%",
   "workshop.bead.handoffLibrary": "映射来源：{label}",
   "workshop.bead.handoffNoLibrary": "未绑定打印色库",
   "workshop.bead.handoffSummaryCancel": "返回编辑",
@@ -174,6 +185,8 @@ const enUS = {
   "workshop.bead.classifying": "Analyzing the pattern type…",
   "workshop.bead.classificationUnavailable":
     "The pattern type could not be detected automatically. Confirm it manually.",
+  "workshop.bead.cropRequired":
+    "This image contains screenshot chrome, multiple patterns, or an incomplete chart. Crop it to one complete pattern first.",
   "workshop.bead.rows": "Rows",
   "workshop.bead.columns": "Columns",
   "workshop.bead.originX": "Grid origin X",
@@ -185,11 +198,8 @@ const enUS = {
     "Choose an empty-cell sample or explicitly confirm that the pattern has no empty cells.",
   "workshop.bead.pickEmpty": "Choose an empty cell",
   "workshop.bead.noEmpty": "No empty cells",
-  "workshop.bead.pickSupport": "Choose transparent support",
-  "workshop.bead.clearSupport": "Clear support sample",
   "workshop.bead.emptySample": "Empty sample: cell {index}",
   "workshop.bead.noEmptySelected": "Confirmed: no empty cells",
-  "workshop.bead.supportSample": "Transparent support sample: cell {index}",
   "workshop.bead.rotate0": "Rotate 0°",
   "workshop.bead.rotate90": "Rotate 90°",
   "workshop.bead.rotate180": "Rotate 180°",
@@ -201,12 +211,24 @@ const enUS = {
   "workshop.bead.calibrationCanvas": "Bead pattern grid calibration",
   "workshop.bead.editorTitle": "Edit bead matrix",
   "workshop.bead.editorDescription":
-    "Correct the recognized matrix, then adjust pressure. Transparent support affects contact geometry but adds no output color.",
+    "Correct the recognized matrix, adjust pressure, and erase beads you do not need.",
+  "workshop.bead.toolsTitle": "Editing tools",
+  "workshop.bead.paletteTitle": "Colors",
   "workshop.bead.tool.paint": "Paint",
   "workshop.bead.tool.erase": "Erase",
+  "workshop.bead.tool.eraseFill": "Erase area",
   "workshop.bead.tool.eyedropper": "Eyedropper",
   "workshop.bead.tool.fill": "Fill",
-  "workshop.bead.tool.support": "Transparent support",
+  "workshop.bead.toolHint.paint":
+    "Click or drag across cells to paint with the current color.",
+  "workshop.bead.toolHint.erase":
+    "Click or drag across cells to remove beads one at a time.",
+  "workshop.bead.toolHint.eraseFill":
+    "Click a color area to erase the matching cells connected above, below, left, or right.",
+  "workshop.bead.toolHint.eyedropper":
+    "Click a cell to sample it, then continue with Paint or Erase.",
+  "workshop.bead.toolHint.fill":
+    "Click a color area to fill the matching cells connected above, below, left, or right.",
   "workshop.bead.undo": "Undo",
   "workshop.bead.redo": "Redo",
   "workshop.bead.previousIssue": "Previous review cell",
@@ -239,17 +261,19 @@ const enUS = {
   "workshop.bead.customColor": "Add custom color",
   "workshop.bead.compression": "Pressure",
   "workshop.bead.compressionHint":
-    "0 preserves center holes and gaps, 50 keeps small cross or diamond reliefs, and 100 closes them completely.",
-  "workshop.bead.pressureLight": "0 · Light, open holes",
-  "workshop.bead.pressureStandard": "50 · Standard",
-  "workshop.bead.pressureTight": "100 · Tight, closed holes",
+    "Combines heat, time, and pressure: 0 keeps tightly packed beads with open holes, 50 is a standard open-hole fuse, near 90 leaves only pinholes and junction dents, and 100 is a flat no-hole melt while the exposed rim keeps compressed bead peaks.",
+  "workshop.bead.pressureLight": "0 · Packed, open holes",
+  "workshop.bead.pressureStandard": "50 · Standard fuse",
+  "workshop.bead.pressureTight": "100 · Flat, no holes",
   "workshop.bead.irregularity": "Irregular compression",
   "workshop.bead.irregularityHint":
-    "Off keeps the regular pegboard grid. Higher values shift each whole bead and its hole by a small stable amount so contacts are slightly misaligned without flicker.",
+    "Off keeps the pegboard grid exact. Higher values apply stable, small changes to bead centers, color flow, and exposed rim valleys as fusion increases, without flicker or distorted bead shapes.",
   "workshop.bead.beadPitch": "Bead pitch",
   "workshop.bead.beadPitchHint":
     "The 2.6 mm default is the center-to-center bead pitch and determines the physical canvas size handed to Lumina.",
   "workshop.bead.physicalSize": "{width} × {height} mm",
+  "workshop.bead.estimatedThickness":
+    "Estimated finished thickness: {thickness} mm (intermediate settings are estimates; the 100% no-hole state uses a one-yuan coin as its reference)",
   "workshop.bead.rendering": "Rendering the high-resolution pressure preview…",
   "workshop.bead.newProject": "New pattern",
   "workshop.bead.returnCalibration": "Back to calibration",
@@ -258,9 +282,9 @@ const enUS = {
     "Keep at least one colored bead before converting",
   "workshop.bead.handoffSummaryTitle": "Send to Lumina Converter?",
   "workshop.bead.handoffSummaryDescription":
-    "The source-color PNG will be sent. The current print library is recorded only as mapping provenance and never replaces artwork colors.",
+    "The source-color SVG is sent with a compatible PNG fallback. The current print library is recorded only as mapping provenance and never replaces artwork colors.",
   "workshop.bead.handoffSummary":
-    "{columns} × {rows} cells · {width} × {height} mm · {compression}% pressure · {irregularity}% irregularity",
+    "{columns} × {rows} cells · {width} × {height} × {thickness} mm · {compression}% pressure · {irregularity}% irregularity",
   "workshop.bead.handoffLibrary": "Mapping source: {label}",
   "workshop.bead.handoffNoLibrary": "No print library attached",
   "workshop.bead.handoffSummaryCancel": "Back to editing",

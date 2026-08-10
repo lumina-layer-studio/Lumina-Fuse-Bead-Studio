@@ -128,6 +128,53 @@ describe("bead pressure renderer", () => {
     expect(alphaAt(tight, 32, 32)).toBe(255);
   });
 
+  it("fuses diagonal bead bodies at terminal pressure without closing them early", () => {
+    const project = makeProject(2, 2, [
+      { kind: "color", paletteIndex: 0 },
+      { kind: "empty" },
+      { kind: "empty" },
+      { kind: "color", paletteIndex: 1 },
+    ]);
+    const almostTight = renderBeadProject(project, {
+      compression: 99,
+      pixelsPerCell: 64,
+    });
+
+    expect(alphaAt(almostTight, 63, 63)).toBe(0);
+    expect(alphaAt(almostTight, 64, 64)).toBe(0);
+    for (const irregularity of [0, 44, 100]) {
+      const tight = renderBeadProject(
+        { ...project, irregularity },
+        { compression: 100, pixelsPerCell: 64 },
+      );
+      for (const [x, y] of [
+        [63, 63],
+        [64, 63],
+        [63, 64],
+        [64, 64],
+      ]) {
+        expect(alphaAt(tight, x, y)).toBe(255);
+      }
+    }
+  });
+
+  it("keeps a visible four-bead dent at high but non-terminal pressure", () => {
+    const rendered = renderBeadProject(
+      makeProject(
+        2,
+        2,
+        Array.from(
+          { length: 4 },
+          () => ({ kind: "color", paletteIndex: 0 }) as const,
+        ),
+      ),
+      { compression: 90, pixelsPerCell: 64 },
+    );
+
+    expect(alphaAt(rendered, 62, 63)).toBe(0);
+    expect(alphaAt(rendered, 61, 63)).toBe(255);
+  });
+
   it("closes the contact centre without turning the entire shared edge into a square wall", () => {
     const sameColor = renderBeadProject(
       makeProject(1, 2, [
@@ -203,40 +250,13 @@ describe("bead pressure renderer", () => {
     expect(repeated.data).toEqual(irregular.data);
   });
 
-  it("uses support cells in contact geometry but writes their owned area transparent", () => {
-    const withEmpty = renderBeadProject(
-      makeProject(1, 2, [
-        { kind: "color", paletteIndex: 0 },
-        { kind: "empty" },
-      ]),
-      { compression: 35, pixelsPerCell: 32 },
-    );
-    const withSupport = renderBeadProject(
-      makeProject(1, 2, [
-        { kind: "color", paletteIndex: 0 },
-        { kind: "transparent-support" },
-      ]),
-      { compression: 35, pixelsPerCell: 32 },
-    );
-    const firstCell = { left: 0, top: 0, right: 32, bottom: 32 };
-
-    expect(opaqueCount(withSupport, firstCell)).toBeGreaterThan(
-      opaqueCount(withEmpty, firstCell),
-    );
-    for (let y = 0; y < 32; y += 1) {
-      for (let x = 32; x < 64; x += 1) {
-        expect(alphaAt(withSupport, x, y)).toBe(0);
-      }
-    }
-  });
-
   it("writes only binary alpha and exact palette bytes", () => {
     const rendered = renderBeadProject(
       makeProject(2, 2, [
         { kind: "color", paletteIndex: 0 },
         { kind: "color", paletteIndex: 1 },
         { kind: "empty" },
-        { kind: "transparent-support" },
+        { kind: "empty" },
       ]),
       { compression: 63, pixelsPerCell: 16 },
     );
@@ -271,7 +291,7 @@ describe("bead pressure renderer", () => {
           return { kind: "empty" };
         }
         if (index % 11 === 0) {
-          return { kind: "transparent-support" };
+          return { kind: "empty" };
         }
         return { kind: "color", paletteIndex: index % 2 };
       },

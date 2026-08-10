@@ -29,7 +29,6 @@ export interface BeadCalibrationDraft {
   geometry: BeadGridGeometry;
   orientation: BeadOrientation;
   emptySelection: BeadEmptySelection | null;
-  transparentSupportSampleCellIndex: number | null;
 }
 
 interface BeadCalibrationStepProps {
@@ -93,11 +92,13 @@ export function BeadCalibrationStep({
   const [pickMode, setPickMode] =
     useState<CalibrationPickMode>("none");
   const validGrid = isValidGrid(draft);
+  const requiresCrop = classification?.requiresCrop === true;
   const canRecognize =
     validGrid &&
     draft.emptySelection !== null &&
     !busy &&
-    !classificationBusy;
+    !classificationBusy &&
+    !requiresCrop;
 
   const updateDimensions = (rows: number, columns: number) => {
     const safeRows = clampDimension(rows);
@@ -114,7 +115,6 @@ export function BeadCalibrationStep({
           (source.height - draft.geometry.originY) / safeRows,
       },
       emptySelection: null,
-      transparentSupportSampleCellIndex: null,
     });
   };
 
@@ -138,7 +138,6 @@ export function BeadCalibrationStep({
         cellHeight: (source.height - originY) / draft.rows,
       },
       emptySelection: null,
-      transparentSupportSampleCellIndex: null,
     });
   };
 
@@ -147,11 +146,6 @@ export function BeadCalibrationStep({
       onChange({
         ...draft,
         emptySelection: { kind: "sample", cellIndex },
-      });
-    } else if (pickMode === "transparent-support") {
-      onChange({
-        ...draft,
-        transparentSupportSampleCellIndex: cellIndex,
       });
     }
     setPickMode("none");
@@ -219,7 +213,6 @@ export function BeadCalibrationStep({
                   ...draft,
                   inputMode: event.target.value as BeadInputMode,
                   emptySelection: null,
-                  transparentSupportSampleCellIndex: null,
                 })
               }
             >
@@ -378,28 +371,6 @@ export function BeadCalibrationStep({
             >
               {t("workshop.bead.noEmpty")}
             </button>
-            <button
-              type="button"
-              aria-pressed={pickMode === "transparent-support"}
-              className="segmented-control"
-              onClick={() => setPickMode("transparent-support")}
-            >
-              {t("workshop.bead.pickSupport")}
-            </button>
-            {draft.transparentSupportSampleCellIndex !== null ? (
-              <button
-                type="button"
-                className="segmented-control"
-                onClick={() =>
-                  onChange({
-                    ...draft,
-                    transparentSupportSampleCellIndex: null,
-                  })
-                }
-              >
-                {t("workshop.bead.clearSupport")}
-              </button>
-            ) : null}
           </div>
 
           <div className="sample-summary">
@@ -413,16 +384,13 @@ export function BeadCalibrationStep({
             {draft.emptySelection?.kind === "none" ? (
               <p>{t("workshop.bead.noEmptySelected")}</p>
             ) : null}
-            {draft.transparentSupportSampleCellIndex !== null ? (
-              <p>
-                {interpolate(t("workshop.bead.supportSample"), {
-                  index:
-                    draft.transparentSupportSampleCellIndex + 1,
-                })}
-              </p>
-            ) : null}
           </div>
 
+          {requiresCrop ? (
+            <StatusBanner tone="warning">
+              {t("workshop.bead.cropRequired")}
+            </StatusBanner>
+          ) : null}
           {!validGrid ? (
             <>
               <StatusBanner tone="warning">
@@ -470,9 +438,6 @@ export function BeadCalibrationStep({
                 draft.emptySelection?.kind === "sample"
                   ? draft.emptySelection.cellIndex
                   : null
-              }
-              transparentSupportCellIndex={
-                draft.transparentSupportSampleCellIndex
               }
               onPickCell={handleCellPick}
             />

@@ -1,22 +1,22 @@
 # Lumina Fuse Bead Studio
 
-Lumina Studio 的官方拼豆工作台模块。它把清晰图纸或截图分析为可编辑的拼豆矩阵，模拟不同压合程度下豆子之间的挤压与熨烫融合，再把确认后的源色 PNG 交给 Lumina 原有的叠色打印流程。
+Lumina Studio 的官方拼豆工作台模块。它把清晰图纸或截图分析为可编辑的拼豆矩阵，模拟不同压合程度下豆子之间的挤压与熨烫融合，再把确认后的源色 SVG 交给 Lumina 原有的矢量叠色打印流程，并附带 PNG 兼容回退。
 
-它不是普通的“图片转像素图”滤镜。自动识别只是进入工作台的一条路径，网格、空位、透明支撑、低置信度格和最终颜色都可以继续校正。
+它不是普通的“图片转像素图”滤镜。自动识别只是进入工作台的一条路径，网格、空位、低置信度格和最终颜色都可以继续校正。
 
 ## 支持的图纸
 
 - **编号网格图**：识别规则网格，尽量避开格线、编号和覆盖文字后采样颜色。
 - **硬边像素图**：从整数像素块推断正方形网格，保留透明像素与普通空位的区别。
-- **圆豆俯视图**：从豆子圆环采样颜色，排除中心孔，并保留透明支撑格。
+- **圆豆俯视图**：从豆子圆环采样颜色，并排除中心孔。
 
 第一版面向清晰、正视、单一图案的 PNG、JPEG 或 WebP。透视实拍、倾斜网格、光照校正和通用照片转像素画不在支持范围内；不确定结果会进入校准或低置信度待处理列表，不会静默猜测。
 
 ## 从图纸到可打印图像
 
 1. 选择图纸，确认识别类型。
-2. 裁剪并校准行列、正方形网格、方向、空位和透明支撑样本。
-3. 在矩阵中绘制、擦除、吸色、填充或标记透明支撑，逐项处理低置信度格。
+2. 裁剪并校准行列、正方形网格、方向和空位样本。
+3. 在矩阵中绘制、擦除、吸色或填充，逐项处理低置信度格。
 4. 调整压合程度并实时查看豆间挤压效果。
 5. 可选地把“图纸原色”映射到 Lumina 当前 LUT 或耗材档案，预览可打印颜色。
 6. 确认物理尺寸和源色图像后，交给 Lumina 图像转换。
@@ -38,7 +38,7 @@ Lumina Studio 的官方拼豆工作台模块。它把清晰图纸或截图分析
 
 “图纸原色”是工程和导出配方的权威颜色，不会因切换 LUT、耗材档案或手动映射而被覆盖。“当前打印色库”只是一个可更新、可逐色调整的预览映射；色库发生变化时，旧映射会明确标记为过期，也不会自动重排、隐藏或合并品牌颜色。
 
-交给 Lumina 的始终是源色 PNG、物理尺寸和 `bead-recipe/v1` 配方。分层、叠色、3MF/打印输出仍由 Lumina 现有转换流程负责；本模块不模拟哑光烘焙纸或用户后处理材质。
+交给 Lumina 的始终是源色 SVG、兼容 PNG、物理尺寸和 `bead-recipe/v1` 配方。分层、叠色、3MF/打印输出仍由 Lumina 现有转换流程负责；本模块不模拟哑光烘焙纸或用户后处理材质。
 
 ## 安装与本地开发
 
@@ -68,7 +68,7 @@ pnpm package
 - `image.pick`：由 Lumina 选择并读取一张图纸；
 - `project.storage`：保存可恢复的本地工程；
 - `color-library.read`：读取去除内部路径后的当前色库；
-- `handoff.image`：经用户确认后把源色 PNG 交给转换器。
+- `handoff.image`：经用户确认后把源色 SVG 与兼容 PNG 交给转换器。
 
 运行时没有通用网络、文件系统路径、Electron API 或跨模块访问能力。完整信任边界见 [docs/security.md](docs/security.md)。
 
@@ -78,8 +78,8 @@ pnpm package
 
 Fuse Bead Studio is the official installable Lumina Workshop module for turning clear pattern charts into an editable bead matrix and a pressure-aware fused-bead render. It supports numbered grids, hard-pixel charts, and top-down ring previews; uncertain cells stay visible and editable.
 
-The source palette remains authoritative. A selected Lumina LUT or material archive may provide a separate printable-color preview without mutating, ranking, hiding, or deduplicating source or library colors. Handoff sends the source-color PNG, the `2.6 mm` default pitch, and the compatible `bead-recipe/v1` payload into Lumina's existing layered-color converter.
+The source palette remains authoritative. A selected Lumina LUT or material archive may provide a separate printable-color preview without mutating, ranking, hiding, or deduplicating source or library colors. Handoff sends the source-color SVG, a compatible PNG fallback, the `2.6 mm` default pitch, and the `bead-recipe/v1` payload into Lumina's native vector converter.
 
-Pressure presets at 0, 50, 80, and 100 range from open holes to fully closed center holes and four-bead valleys. A value of 99 deliberately retains residual openings.
+Pressure presets at 0, 50, and 100 range from tightly packed open holes to fully closed center holes and four-bead valleys; the slider still supports every intermediate value, and 99 deliberately retains residual openings.
 
 The module runs without general network, filesystem-path, Electron, or cross-module access. See [testing](docs/testing.md), [recognition contract](docs/recognition-contract.md), and [security](docs/security.md) for the complete development and trust boundaries.

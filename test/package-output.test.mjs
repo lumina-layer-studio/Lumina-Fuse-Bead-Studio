@@ -6,8 +6,11 @@ import test from "node:test";
 
 import { unzipSync } from "fflate";
 
+const packageJson = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8"),
+);
 const assetName =
-  "lumina.bead-pattern-1.0.8-dev.3.lumina-workshop";
+  `lumina.bead-pattern-${packageJson.version}.lumina-workshop`;
 const assetPath = `artifacts/${assetName}`;
 const checksumPath = `${assetPath}.sha256`;
 

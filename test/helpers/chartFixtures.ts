@@ -221,6 +221,136 @@ export function makeGeneratedHardPixelChart(
   });
 }
 
+export function makeImplicitMardChart(
+  rows = 11,
+  columns = 9,
+  sparseArtwork = false,
+): {
+  raster: Raster;
+  expectedGeometry: BeadGridGeometry;
+} {
+  const stride = 20;
+  const axisCells = 1;
+  const legendGap = 34;
+  const legendHeight = 38;
+  const width = (columns + axisCells * 2) * stride;
+  const gridHeight = (rows + axisCells * 2) * stride;
+  const raster = makeRaster(
+    width,
+    gridHeight + legendGap + legendHeight,
+    [255, 255, 255, OPAQUE],
+  );
+
+  const paintRect = (
+    left: number,
+    top: number,
+    rectWidth: number,
+    rectHeight: number,
+    color: readonly [number, number, number, number],
+  ): void => {
+    for (let y = top; y < top + rectHeight; y += 1) {
+      for (let x = left; x < left + rectWidth; x += 1) {
+        setPixel(raster, x, y, color);
+      }
+    }
+  };
+  const drawCode = (cellRow: number, cellColumn: number): void => {
+    const left = cellColumn * stride + 6;
+    const top = cellRow * stride + 7;
+    paintRect(left, top, 2, 7, [30, 30, 30, OPAQUE]);
+    paintRect(left + 5, top, 2, 7, [30, 30, 30, OPAQUE]);
+  };
+
+  for (let column = 1; column <= columns; column += 1) {
+    drawCode(0, column);
+    drawCode(rows + 1, column);
+  }
+  for (let row = 1; row <= rows; row += 1) {
+    drawCode(row, 0);
+    drawCode(row, columns + 1);
+    for (let column = 1; column <= columns; column += 1) {
+      const onArtworkBounds =
+        row === 1 ||
+        row === rows ||
+        column === 1 ||
+        column === columns;
+      const insideSparseArtwork =
+        row >= Math.ceil(rows * 0.18) &&
+        row <= Math.floor(rows * 0.86) &&
+        column >= Math.ceil(columns * 0.16) &&
+        column <= Math.floor(columns * 0.82);
+      if (
+        !sparseArtwork &&
+        (onArtworkBounds || (row + column) % 5 === 0)
+      ) {
+        paintRect(
+          column * stride,
+          row * stride,
+          stride,
+          stride,
+          (row + column) % 2 === 0
+            ? [221, 83, 94, OPAQUE]
+            : [80, 163, 130, OPAQUE],
+        );
+      }
+      if (!sparseArtwork || insideSparseArtwork) {
+        if (sparseArtwork && (row + column) % 3 === 0) {
+          paintRect(
+            column * stride,
+            row * stride,
+            stride,
+            stride,
+            [80, 163, 130, OPAQUE],
+          );
+        }
+        drawCode(row, column);
+      }
+    }
+  }
+
+  paintRect(18, gridHeight + legendGap, 54, 26, [221, 83, 94, OPAQUE]);
+  paintRect(91, gridHeight + legendGap, 54, 26, [80, 163, 130, OPAQUE]);
+
+  return {
+    raster,
+    expectedGeometry: {
+      originX: stride,
+      originY: stride,
+      cellWidth: stride,
+      cellHeight: stride,
+    },
+  };
+}
+
+export function resizeRasterNearest(
+  source: Raster,
+  scale: number,
+): Raster {
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  const raster = makeRaster(width, height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const sourceX = Math.min(
+        source.width - 1,
+        Math.floor(x / scale),
+      );
+      const sourceY = Math.min(
+        source.height - 1,
+        Math.floor(y / scale),
+      );
+      const offset = (sourceY * source.width + sourceX) * 4;
+      setPixel(raster, x, y, [
+        source.data[offset],
+        source.data[offset + 1],
+        source.data[offset + 2],
+        source.data[offset + 3],
+      ]);
+    }
+  }
+  return raster;
+}
+
 export function makeTransparentHardPixelChart(): Raster {
   const raster = makeGeneratedHardPixelChart(2, 3, 8);
   for (let y = 0; y < 8; y += 1) {

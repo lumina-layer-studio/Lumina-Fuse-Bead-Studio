@@ -9,9 +9,9 @@ import type {
 export type BeadEditorTool =
   | "paint"
   | "erase"
+  | "eraseFill"
   | "eyedropper"
-  | "fill"
-  | "support";
+  | "fill";
 
 export interface BeadCellPatch {
   index: number;
@@ -141,9 +141,6 @@ function cellForTool(
   if (tool === "erase") {
     return { kind: "empty" };
   }
-  if (tool === "support") {
-    return { kind: "transparent-support" };
-  }
   return isValidPaletteIndex(project, paletteIndex)
     ? { kind: "color", paletteIndex }
     : null;
@@ -193,14 +190,18 @@ function patchesForTool(
 ): BeadCellPatch[] {
   const replacement = cellForTool(
     project,
-    tool === "fill" ? "paint" : tool,
+    tool === "fill"
+      ? "paint"
+      : tool === "eraseFill"
+        ? "erase"
+        : tool,
     paletteIndex,
   );
   if (!replacement) {
     return [];
   }
   const indices =
-    tool === "fill"
+    tool === "fill" || tool === "eraseFill"
       ? connectedRegion(project, cellIndex)
       : [cellIndex];
   return indices.flatMap((index) => {
@@ -404,8 +405,7 @@ function applyEyedropper(
   }
   return {
     ...state,
-    activeTool:
-      cell.kind === "transparent-support" ? "support" : "erase",
+    activeTool: "erase",
     selectedCellIndex: cellIndex,
   };
 }

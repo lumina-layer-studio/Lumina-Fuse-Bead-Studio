@@ -16,5 +16,8 @@ describe("Workshop theme contract", () => {
       /--bead-border:\s*var\(\s*--lumina-border-subtle,\s*var\(\s*--lumina-border,/,
     );
     expect(css).toMatch(/body\s*{[\s\S]*var\(--bead-canvas\)/);
+    expect(css).toMatch(
+      /\.bead-canvas--matrix\s*{[^}]*border-radius:\s*0\s*;/,
+    );
   });
 });

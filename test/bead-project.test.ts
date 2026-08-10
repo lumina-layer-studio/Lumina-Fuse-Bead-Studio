@@ -36,7 +36,7 @@ function makeProject(
     cells: [
       { kind: "empty" },
       { kind: "color", paletteIndex: 0 },
-      { kind: "transparent-support" },
+      { kind: "empty" },
       { kind: "color", paletteIndex: 1 },
       { kind: "empty" },
       { kind: "empty" },
@@ -141,7 +141,7 @@ describe("bead project model", () => {
       { length: 4 * 5 },
       () => ({ kind: "empty" }) as const,
     );
-    cells[1 * 5 + 1] = { kind: "transparent-support" };
+    cells[1 * 5 + 1] = { kind: "color", paletteIndex: 1 };
     cells[1 * 5 + 2] = { kind: "color", paletteIndex: 0 };
     cells[2 * 5 + 3] = { kind: "color", paletteIndex: 1 };
 
@@ -168,7 +168,7 @@ describe("bead project model", () => {
     expect(trimmed.rows).toBe(2);
     expect(trimmed.columns).toBe(3);
     expect(trimmed.cells).toEqual([
-      { kind: "transparent-support" },
+      { kind: "color", paletteIndex: 1 },
       { kind: "color", paletteIndex: 0 },
       { kind: "empty" },
       { kind: "empty" },
@@ -223,14 +223,14 @@ describe("bead project model", () => {
     });
   });
 
-  it("encodes empty, color, and transparent support cells with stable RLE", () => {
+  it("encodes empty and color cells with stable RLE", () => {
     const cells: BeadCell[] = [
       { kind: "empty" },
       { kind: "empty" },
       { kind: "color", paletteIndex: 0 },
       { kind: "color", paletteIndex: 0 },
-      { kind: "transparent-support" },
-      { kind: "transparent-support" },
+      { kind: "empty" },
+      { kind: "empty" },
       { kind: "color", paletteIndex: 1 },
     ];
 
@@ -239,10 +239,41 @@ describe("bead project model", () => {
     expect(encoded).toEqual([
       [-1, 2],
       [0, 2],
-      [-2, 2],
+      [-1, 2],
       [1, 1],
     ]);
     expect(decodeBeadCellsRle(encoded, cells.length)).toEqual(cells);
+  });
+
+  it("rejects the retired transparent-support cell kind", () => {
+    const project = makeProject({
+      cells: [
+        { kind: "empty" },
+        { kind: "color", paletteIndex: 0 },
+        { kind: "empty" },
+        { kind: "color", paletteIndex: 1 },
+        { kind: "empty" },
+        { kind: "empty" },
+      ],
+    });
+
+    expectInvalid(
+      {
+        ...project,
+        cells: [
+          ...project.cells.slice(0, 2),
+          { kind: "transparent-support" },
+          ...project.cells.slice(3),
+        ],
+      },
+      "invalid-cell",
+    );
+  });
+
+  it("rejects the retired transparent-support RLE token", () => {
+    expect(() => decodeBeadCellsRle([[-2, 1]], 1)).toThrow(
+      BeadProjectValidationError,
+    );
   });
 
   it("rejects malformed project dimensions, cells, palette, pitch, and pressure", () => {
@@ -293,7 +324,6 @@ describe("bead project model", () => {
           flipVertical: false,
         },
         emptySelection: { kind: "sample", cellIndex: 0 },
-        transparentSupportSampleCellIndex: 2,
       },
       beadPitchMm: 2.6,
       compression: 84,

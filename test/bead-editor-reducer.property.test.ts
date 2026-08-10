@@ -22,7 +22,7 @@ describe("bead editor reducer properties", () => {
             tool: fc.constantFrom(
               "paint" as const,
               "erase" as const,
-              "support" as const,
+              "eraseFill" as const,
               "fill" as const,
             ),
             cellSeed: fc.nat(),

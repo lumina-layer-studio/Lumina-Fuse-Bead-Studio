@@ -40,7 +40,6 @@ import {
 } from "../host/hostAdapter";
 import {
   mapProjectToColorLibrary,
-  projectForPrintPreview,
   setManualColorMapping,
 } from "../host/colorMapping";
 import {
@@ -48,8 +47,8 @@ import {
   type BeadImageCodec,
 } from "../host/imageCodec";
 import {
+  handoffPreparedBeadImage,
   prepareBeadHandoff,
-  toWorkshopImageHandoff,
   type PreparedBeadHandoff,
 } from "../host/handoff";
 import { translate, type Locale } from "../i18n/translations";
@@ -153,7 +152,6 @@ function draftForRaster(
       flipVertical: false,
     },
     emptySelection: null,
-    transparentSupportSampleCellIndex: null,
   };
 }
 
@@ -180,8 +178,6 @@ function draftFromProject(
     },
     orientation: { ...project.calibration.orientation },
     emptySelection: { ...project.calibration.emptySelection },
-    transparentSupportSampleCellIndex:
-      project.calibration.transparentSupportSampleCellIndex,
   };
 }
 
@@ -328,9 +324,6 @@ export function BeadWorkshopModule({
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [editorState, setEditorState] =
     useState<BeadEditorState | null>(null);
-  const [renderResult, setRenderResult] =
-    useState<BeadRenderResult | null>(null);
-  const [renderBusy, setRenderBusy] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [handoffSummary, setHandoffSummary] =
     useState<HandoffSummaryState | null>(null);
@@ -372,24 +365,6 @@ export function BeadWorkshopModule({
     colorLibrary !== null &&
     editorProject.printMapping.libraryId === colorLibrary.id &&
     colorMapping?.stale === false;
-  const renderProject = useMemo(
-    () => {
-      if (stage !== "editor") return null;
-      return editorProject &&
-        colorMapping &&
-        previewColorMode === "print" &&
-        hasCurrentPrintMapping
-        ? projectForPrintPreview(editorProject, colorMapping)
-        : editorProject;
-    },
-    [
-      colorMapping,
-      editorProject,
-      hasCurrentPrintMapping,
-      previewColorMode,
-      stage,
-    ],
-  );
   const calibrationRaster =
     recalibrationSession?.workingRaster ?? workingRaster;
   const calibrationCrop = recalibrationSession
@@ -713,60 +688,6 @@ export function BeadWorkshopModule({
   }, [hasCurrentPrintMapping, previewColorMode]);
 
   useEffect(() => {
-    if (!renderProject) {
-      setRenderResult(null);
-      setRenderBusy(false);
-      return undefined;
-    }
-    let cancelled = false;
-    const engine = getEngine();
-    const project = renderProject;
-    const previewTask = engine.render(
-      project,
-      project.compression,
-      12,
-    );
-    engine.cancelBefore(previewTask.id);
-    setRenderBusy(true);
-    void previewTask.promise
-      .then((result) => {
-        if (!cancelled) setRenderResult(result);
-      })
-      .catch((error) => {
-        if (!cancelled && !isCancellation(error)) {
-          reportProcessingError("preview-render-failed");
-        }
-      });
-
-    let fullTask: BeadWorkerTask<BeadRenderResult> | null = null;
-    const timer = window.setTimeout(() => {
-      if (cancelled) return;
-      fullTask = engine.render(project, project.compression, 32);
-      engine.cancelBefore(fullTask.id);
-      void fullTask.promise
-        .then((result) => {
-          if (!cancelled) {
-            setRenderResult(result);
-            setRenderBusy(false);
-          }
-        })
-        .catch((error) => {
-          if (!cancelled && !isCancellation(error)) {
-            setRenderBusy(false);
-            reportProcessingError("full-render-failed");
-          }
-        });
-    }, 180);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      engine.cancel(previewTask.id);
-      if (fullTask) engine.cancel(fullTask.id);
-    };
-  }, [getEngine, renderProject, reportProcessingError]);
-
-  useEffect(() => {
     if (!initialized || !editorProject) return;
     ignoreFailure(
       client.status.diagnostics({
@@ -869,6 +790,7 @@ export function BeadWorkshopModule({
 
   const applyCrop = (nextCrop: CropRect | null) => {
     if (!originalRaster) return;
+    const shouldApplySuggestion = classification?.requiresCrop === true;
     const nextRaster = nextCrop
       ? cropRaster(originalRaster, nextCrop)
       : originalRaster;
@@ -892,7 +814,7 @@ export function BeadWorkshopModule({
     setClassification(null);
     setCalibrationDraft(nextDraft);
     setCropOpen(false);
-    void classifyRaster(nextRaster, false);
+    void classifyRaster(nextRaster, shouldApplySuggestion);
   };
 
   const handleFitSquareGrid = () => {
@@ -962,8 +884,6 @@ export function BeadWorkshopModule({
       geometry: draft.geometry,
       emptySelection:
         draft.emptySelection ?? { kind: "none" },
-      transparentSupportSampleCellIndex:
-        draft.transparentSupportSampleCellIndex,
       orientation: draft.orientation,
     });
     const token = {
@@ -1011,8 +931,6 @@ export function BeadWorkshopModule({
           orientation: { ...draft.orientation },
           emptySelection:
             draft.emptySelection ?? { kind: "none" },
-          transparentSupportSampleCellIndex:
-            draft.transparentSupportSampleCellIndex,
         },
         confidenceIssues: result.confidenceIssues,
         beadPitchMm: previousProject?.beadPitchMm,
@@ -1089,7 +1007,7 @@ export function BeadWorkshopModule({
   };
 
   const sendHandoff = async (handoff: PreparedBeadHandoff) =>
-    client.handoff.image(toWorkshopImageHandoff(handoff));
+    handoffPreparedBeadImage(client, handoff);
 
   const handleHandoff = async () => {
     const project = editorState?.present;
@@ -1230,7 +1148,6 @@ export function BeadWorkshopModule({
     setCrop(null);
     setCropOpen(false);
     setRecalibrationSession(null);
-    setRenderResult(null);
     setHandoffSummary(null);
     setPendingReplacement(null);
     setHandoffBusy(false);
@@ -1316,8 +1233,6 @@ export function BeadWorkshopModule({
         {stage === "editor" && editorState ? (
           <BeadEditorStep
             state={editorState}
-            renderResult={renderResult}
-            renderBusy={renderBusy}
             sourceRaster={workingRaster}
             translate={t}
             dispatch={dispatchEditor}
@@ -1357,6 +1272,10 @@ export function BeadWorkshopModule({
           }
           heightMm={
             handoffSummary?.handoff.base.recommendedHeightMm ?? 0
+          }
+          thicknessMm={
+            handoffSummary?.handoff.base
+              .recommendedTotalThicknessMm ?? 0
           }
           libraryLabel={handoffSummary?.libraryLabel ?? null}
           translate={t}

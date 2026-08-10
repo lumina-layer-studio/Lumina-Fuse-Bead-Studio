@@ -144,6 +144,16 @@ export class BeadWorkerClient {
     }));
   }
 
+  renderPreview(
+    project: BeadProject,
+  ): BeadWorkerTask<BeadWorkerResultMap["render-preview"]> {
+    return this.post("render-preview", (id) => ({
+      id,
+      type: "render-preview",
+      project: { ...project, source: null },
+    }));
+  }
+
   cancelBefore(requestId: number): void {
     for (const [id, task] of this.pending) {
       if (id < requestId) {

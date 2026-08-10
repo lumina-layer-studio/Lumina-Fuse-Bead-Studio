@@ -13,6 +13,7 @@ interface BeadHandoffSummaryDialogProps {
   irregularity: number;
   widthMm: number;
   heightMm: number;
+  thicknessMm: number;
   libraryLabel: string | null;
   translate(key: string): string;
   onCancel(): void;
@@ -28,6 +29,7 @@ export function BeadHandoffSummaryDialog({
   irregularity,
   widthMm,
   heightMm,
+  thicknessMm,
   libraryLabel,
   translate: t,
   onCancel,
@@ -67,6 +69,7 @@ export function BeadHandoffSummaryDialog({
               columns,
               width: widthMm,
               height: heightMm,
+              thickness: thicknessMm,
               compression,
               irregularity,
             })}

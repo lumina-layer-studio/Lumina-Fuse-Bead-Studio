@@ -54,7 +54,6 @@ describe("worker supersession", () => {
         cellHeight: 8,
       },
       emptySelection: { kind: "sample", cellIndex: 0 },
-      transparentSupportSampleCellIndex: null,
       orientation: {
         rotation: 0,
         flipHorizontal: false,

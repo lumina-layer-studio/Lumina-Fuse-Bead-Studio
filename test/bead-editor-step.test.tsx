@@ -1,4 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { useReducer } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +14,6 @@ import {
   type BeadEditorAction,
 } from "../src/domain/editorReducer";
 import { createBeadProject } from "../src/domain/project";
-import { renderBeadProject } from "../src/domain/renderer";
 import { translate } from "../src/i18n/translations";
 
 const t = (key: string) => translate("zh-CN", key);
@@ -28,7 +32,7 @@ function project() {
     cells: [
       { kind: "empty" },
       { kind: "color", paletteIndex: 0 },
-      { kind: "transparent-support" },
+      { kind: "empty" },
       { kind: "color", paletteIndex: 1 },
     ],
     confidenceIssues: [
@@ -60,15 +64,9 @@ describe("BeadEditorStep", () => {
     const currentProject = project();
     const state = createBeadEditorState(currentProject);
     const dispatch = vi.fn<(action: BeadEditorAction) => void>();
-    const pressure = renderBeadProject(currentProject, {
-      compression: 50,
-      pixelsPerCell: 12,
-    });
     render(
       <BeadEditorStep
         state={state}
-        renderResult={pressure}
-        renderBusy={false}
         sourceRaster={{
           width: 2,
           height: 2,
@@ -94,22 +92,26 @@ describe("BeadEditorStep", () => {
     const tools = [
       ["画笔", "paint"],
       ["橡皮", "erase"],
+      ["区域擦除", "eraseFill"],
       ["吸管", "eyedropper"],
       ["填充", "fill"],
-      ["透明支撑", "support"],
     ] as const;
+    const toolbar = screen.getByRole("toolbar", {
+      name: "编辑工具",
+    });
     for (const [name, tool] of tools) {
-      fireEvent.click(screen.getByRole("button", { name }));
+      fireEvent.click(within(toolbar).getByRole("button", { name }));
       expect(dispatch).toHaveBeenCalledWith({
         type: "set-tool",
         tool,
       });
     }
+    expect(
+      screen.queryByRole("button", { name: "透明支撑" }),
+    ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
-    expect(dispatch).toHaveBeenCalledWith({ type: "undo" });
-    fireEvent.click(screen.getByRole("button", { name: "重做" }));
-    expect(dispatch).toHaveBeenCalledWith({ type: "redo" });
+    expect(screen.getByRole("button", { name: "撤销" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "重做" })).toBeDisabled();
 
     fireEvent.click(
       screen.getByRole("button", { name: "上一个待复核格" }),
@@ -140,7 +142,9 @@ describe("BeadEditorStep", () => {
     });
     expect(fusionPreview).toBeInTheDocument();
     expect(fusionPreview.tagName.toLowerCase()).toBe("svg");
-    expect(fusionPreview.querySelectorAll("path")).toHaveLength(2);
+    expect(
+      fusionPreview.querySelectorAll("[data-bead-fusion-path]"),
+    ).toHaveLength(2);
   });
 
   it("offers recalibration only while the imported source is available", () => {
@@ -149,8 +153,6 @@ describe("BeadEditorStep", () => {
     const { rerender } = render(
       <BeadEditorStep
         state={state}
-        renderResult={null}
-        renderBusy={false}
         sourceRaster={{
           width: 2,
           height: 2,
@@ -174,8 +176,6 @@ describe("BeadEditorStep", () => {
     rerender(
       <BeadEditorStep
         state={state}
-        renderResult={null}
-        renderBusy={false}
         sourceRaster={null}
         translate={t}
         dispatch={vi.fn()}
@@ -198,8 +198,6 @@ describe("BeadEditorStep", () => {
         <>
           <BeadEditorStep
             state={state}
-            renderResult={null}
-            renderBusy={false}
             sourceRaster={null}
             translate={t}
             dispatch={dispatch}
@@ -225,9 +223,9 @@ describe("BeadEditorStep", () => {
     const cellsBefore = screen.getByTestId("cells").textContent;
     const pitchBefore = screen.getByTestId("pitch").textContent;
     for (const name of [
-      "0 · 轻压有孔",
-      "50 · 标准",
-      "100 · 紧压无孔",
+      "0 · 紧密有孔",
+      "50 · 标准熔合",
+      "100 · 平熔无孔",
     ]) {
       fireEvent.click(screen.getByRole("button", { name }));
     }
@@ -253,6 +251,54 @@ describe("BeadEditorStep", () => {
     expect(screen.getByTestId("irregularity")).toHaveTextContent("67");
   });
 
+  it("explains connected area erase and reflects available history", () => {
+    const initialState = createBeadEditorState(project());
+    const editedState = beadEditorReducer(initialState, {
+      type: "apply-tool",
+      tool: "paint",
+      cellIndex: 0,
+      paletteIndex: 0,
+    });
+    const areaEraseState = {
+      ...editedState,
+      activeTool: "eraseFill" as const,
+    };
+    const dispatch = vi.fn<(action: BeadEditorAction) => void>();
+    const { rerender } = render(
+      <BeadEditorStep
+        state={areaEraseState}
+        sourceRaster={null}
+        translate={t}
+        dispatch={dispatch}
+        onNewProject={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "区域擦除" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByText(
+        "点击色块，一次清空与它上下左右相连的同色区域。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "撤销" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "重做" })).toBeDisabled();
+
+    const undoneState = beadEditorReducer(editedState, { type: "undo" });
+    rerender(
+      <BeadEditorStep
+        state={undoneState}
+        sourceRaster={null}
+        translate={t}
+        dispatch={dispatch}
+        onNewProject={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "撤销" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "重做" })).toBeEnabled();
+  });
+
   it("maps a matrix pointer to a bounded edit action and shows fixed inspection zoom", () => {
     const state = {
       ...createBeadEditorState(project()),
@@ -262,20 +308,20 @@ describe("BeadEditorStep", () => {
     render(
       <BeadEditorStep
         state={state}
-        renderResult={null}
-        renderBusy={false}
         sourceRaster={null}
         translate={t}
         dispatch={dispatch}
         onNewProject={vi.fn()}
       />,
     );
-    expect(
-      screen.getByRole("img", { name: "选中格局部放大" }),
-    ).toBeInTheDocument();
+    const magnifierCanvas = screen.getByRole("img", {
+      name: "选中格局部放大",
+    });
+    expect(magnifierCanvas).toHaveClass("bead-canvas--matrix");
     const canvas = screen.getByRole("img", {
       name: "可编辑拼豆矩阵",
     });
+    expect(canvas).toHaveClass("bead-canvas--matrix");
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
       x: 0,
       y: 0,
@@ -308,14 +354,70 @@ describe("BeadEditorStep", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it("applies area erase once after a completed click instead of sweeping adjacent regions", () => {
+    const state = {
+      ...createBeadEditorState(project()),
+      activeTool: "eraseFill" as const,
+    };
+    const dispatch = vi.fn<(action: BeadEditorAction) => void>();
+    render(
+      <BeadEditorStep
+        state={state}
+        sourceRaster={null}
+        translate={t}
+        dispatch={dispatch}
+        onNewProject={vi.fn()}
+      />,
+    );
+    const canvas = screen.getByRole("img", {
+      name: "可编辑拼豆矩阵",
+    });
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 200,
+      bottom: 200,
+      width: 200,
+      height: 200,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(canvas, {
+      pointerId: 1,
+      clientX: 25,
+      clientY: 25,
+    });
+    fireEvent.pointerMove(canvas, {
+      pointerId: 1,
+      clientX: 125,
+      clientY: 25,
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+
+    fireEvent.click(canvas, {
+      clientX: 25,
+      clientY: 25,
+    });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "apply-tool",
+        cellIndex: 0,
+        tool: "eraseFill",
+      }),
+    );
+  });
+
   it("offers converter handoff only when at least one colored bead exists", () => {
     const onHandoff = vi.fn();
     const coloredState = createBeadEditorState(project());
     const { rerender } = render(
       <BeadEditorStep
         state={coloredState}
-        renderResult={null}
-        renderBusy={false}
         sourceRaster={null}
         translate={t}
         dispatch={vi.fn()}
@@ -343,8 +445,6 @@ describe("BeadEditorStep", () => {
     rerender(
       <BeadEditorStep
         state={createBeadEditorState(empty)}
-        renderResult={null}
-        renderBusy={false}
         sourceRaster={null}
         translate={t}
         dispatch={vi.fn()}
@@ -376,8 +476,6 @@ describe("BeadEditorStep", () => {
     render(
       <BeadEditorStep
         state={createBeadEditorState(old)}
-        renderResult={null}
-        renderBusy={false}
         sourceRaster={null}
         translate={t}
         dispatch={vi.fn()}

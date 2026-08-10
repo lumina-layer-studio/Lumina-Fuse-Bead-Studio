@@ -1,43 +1,53 @@
-import { useId, useMemo } from "react";
+import { useEffect, useId, useState } from "react";
 
 import {
-  buildBeadFusionGeometry,
-  type FusionPoint,
-} from "../domain/fusionGeometry";
+  buildBeadFusionPreviewSvg,
+  type BeadFusionPreviewSvg,
+} from "../domain/svgRenderer";
 import type { BeadProject } from "../domain/types";
 import { cx } from "../ui/panelPrimitives";
+import {
+  createBeadFusionPreviewRenderer,
+  type BeadFusionPreviewRenderer,
+} from "../worker/previewRenderer";
 
 interface BeadFusionPreviewProps {
   project: BeadProject;
   ariaLabel: string;
   className?: string;
-}
-
-function contourPath(points: readonly FusionPoint[]): string {
-  return `${points
-    .map(
-      ({ x, y }, index) =>
-        `${index === 0 ? "M" : "L"} ${x.toFixed(5)} ${y.toFixed(5)}`,
-    )
-    .join(" ")} Z`;
+  createPreviewRenderer?: () => BeadFusionPreviewRenderer;
 }
 
 export function BeadFusionPreview({
   project,
   ariaLabel,
   className,
+  createPreviewRenderer,
 }: BeadFusionPreviewProps) {
-  const rawMaskId = useId();
-  const maskId = `bead-fusion-${rawMaskId.replaceAll(":", "")}`;
-  const geometry = useMemo(
+  const [preview, setPreview] = useState<BeadFusionPreviewSvg | null>(
     () =>
-      buildBeadFusionGeometry(
-        project,
-        project.compression,
-        project.irregularity ?? 0,
-      ),
-    [project],
+      createPreviewRenderer === undefined &&
+      typeof globalThis.Worker === "undefined"
+        ? buildBeadFusionPreviewSvg(project)
+        : null,
   );
+  const rendererFactory =
+    createPreviewRenderer ?? createBeadFusionPreviewRenderer;
+  useEffect(() => {
+    let active = true;
+    const renderer = rendererFactory();
+    void renderer
+      .render(project)
+      .then((result) => {
+        if (active) setPreview(result);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      renderer.dispose();
+    };
+  }, [project, rendererFactory]);
+  const maskId = `bead-relief-${useId().replaceAll(":", "")}`;
   const padding = 0.08;
   const viewBox = [
     -padding,
@@ -50,62 +60,56 @@ export function BeadFusionPreview({
     <svg
       role="img"
       aria-label={ariaLabel}
+      aria-busy={preview === null}
       viewBox={viewBox}
       className={cx("bead-fusion-preview", className)}
     >
-      <defs>
-        <mask
-          id={maskId}
-          maskUnits="userSpaceOnUse"
-          x={-padding}
-          y={-padding}
-          width={project.columns + padding * 2}
-          height={project.rows + padding * 2}
-        >
-          <rect
-            x={-padding}
-            y={-padding}
-            width={project.columns + padding * 2}
-            height={project.rows + padding * 2}
-            fill="white"
-          />
-          {geometry.holeRadius > 0
-            ? geometry.contours.map((contour) => (
-                <circle
-                  key={`hole-${contour.cellIndex}`}
-                  cx={contour.center.x}
-                  cy={contour.center.y}
-                  r={geometry.holeRadius}
-                  fill="black"
-                />
-              ))
-            : null}
-          {geometry.junctionRadius > 0
-            ? geometry.junctions.map((junction) => (
-                <circle
-                  key={`junction-${junction.x}-${junction.y}`}
-                  cx={junction.x}
-                  cy={junction.y}
-                  r={geometry.junctionRadius}
-                  fill="black"
-                />
-              ))
-            : null}
-        </mask>
-      </defs>
-      <g mask={`url(#${maskId})`}>
-        {geometry.contours.flatMap((contour) => {
-          const cell = project.cells[contour.cellIndex];
-          if (cell.kind !== "color") return [];
-          const color = project.palette[cell.paletteIndex];
-          return [
+      {preview?.reliefD ? (
+        <defs>
+          <mask
+            id={maskId}
+            data-bead-relief-mask
+            maskUnits="userSpaceOnUse"
+            maskContentUnits="userSpaceOnUse"
+            x={0}
+            y={0}
+            width={project.columns}
+            height={project.rows}
+          >
+            <rect
+              x={0}
+              y={0}
+              width={project.columns}
+              height={project.rows}
+              fill="white"
+            />
             <path
-              key={contour.cellIndex}
-              d={contourPath(contour.points)}
-              fill={`rgb(${color[0]} ${color[1]} ${color[2]})`}
-            />,
-          ];
-        })}
+              data-bead-relief-path
+              d={preview.reliefD}
+              fill="black"
+            />
+          </mask>
+        </defs>
+      ) : null}
+      <g
+        data-bead-fusion-colors
+        mask={preview?.reliefD ? `url(#${maskId})` : undefined}
+      >
+        {(preview?.paths ?? []).map(
+          ({ cellIndex, d, fill, strokeWidth }) => (
+            <path
+              key={cellIndex}
+              data-bead-fusion-path
+              d={d}
+              fill={fill}
+              fillRule="evenodd"
+              stroke={strokeWidth > 0 ? fill : undefined}
+              strokeWidth={strokeWidth > 0 ? strokeWidth : undefined}
+              strokeLinejoin={strokeWidth > 0 ? "round" : undefined}
+              paintOrder={strokeWidth > 0 ? "stroke fill" : undefined}
+            />
+          ),
+        )}
       </g>
     </svg>
   );

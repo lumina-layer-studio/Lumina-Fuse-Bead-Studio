@@ -1,6 +1,8 @@
 import type { BeadProject } from "./types";
 
-const MAX_IRREGULAR_OFFSET = 0.035;
+const MAX_IRREGULAR_OFFSET = 0.024;
+const MAX_IRREGULAR_RADIUS_DELTA = 0.015;
+const MAX_OWNERSHIP_BIAS = 0.045;
 const DEFAULT_SAMPLE_COUNT = 96;
 
 interface GeometryCell {
@@ -19,6 +21,7 @@ export interface BeadFusionContour {
   row: number;
   column: number;
   center: FusionPoint;
+  ownershipBias: number;
   points: FusionPoint[];
 }
 
@@ -69,9 +72,11 @@ function signedCoordinateNoise(
 
 function centerFor(
   cell: GeometryCell,
+  pressure: number,
   irregularity: number,
 ): FusionPoint {
-  const amount = clamp01(irregularity);
+  const amount =
+    clamp01(irregularity) * smoothstep(0.08, 0.8, pressure);
   return {
     x:
       cell.column +
@@ -88,8 +93,24 @@ function centerFor(
   };
 }
 
+function ownershipBiasFor(
+  cell: GeometryCell,
+  pressure: number,
+  irregularity: number,
+): number {
+  return (
+    signedCoordinateNoise(cell.row, cell.column, 4) *
+    MAX_OWNERSHIP_BIAS *
+    clamp01(irregularity) *
+    smoothstep(0.35, 1, pressure)
+  );
+}
+
 function outerRadiusFor(pressure: number): number {
-  return 0.405 + 0.125 * smoothstep(0, 1, pressure);
+  const fusedRadius = 0.47 + 0.03 * smoothstep(0, 1, pressure);
+  const packedRawBoost =
+    0.035 * (1 - smoothstep(0, 0.5, pressure));
+  return fusedRadius + packedRawBoost;
 }
 
 function contactHalfFor(
@@ -111,15 +132,29 @@ function contactHalfFor(
 }
 
 function internalContactHalfFor(pressure: number): number {
-  return contactHalfFor(pressure, 0.34, 0.6);
+  return (
+    contactHalfFor(pressure, 0.39, 0.45) +
+    0.08 * smoothstep(0.62, 1, pressure)
+  );
 }
 
 function boundaryContactHalfFor(pressure: number): number {
-  return contactHalfFor(pressure, 0.28, 0.65);
+  return (
+    contactHalfFor(pressure, 0.31, 0.55) +
+    0.105 * smoothstep(0.62, 1, pressure)
+  );
 }
 
 function holeRadiusFor(pressure: number): number {
-  return 0.19 * (1 - smoothstep(0.35, 1, pressure));
+  return pressure === 1
+    ? 0
+    : 0.2 * Math.pow(1 - pressure, 0.72);
+}
+
+function junctionRadiusFor(pressure: number): number {
+  return pressure === 1
+    ? 0
+    : 0.085 * Math.sqrt(1 - pressure);
 }
 
 function contactReachFor(
@@ -128,9 +163,32 @@ function contactReachFor(
 ): number {
   return (
     0.5 +
-    0.02 * smoothstep(0.7, 1, pressure) +
-    MAX_IRREGULAR_OFFSET * clamp01(irregularity)
+    0.012 * smoothstep(0.08, 1, pressure) +
+    MAX_IRREGULAR_OFFSET *
+      clamp01(irregularity) *
+      smoothstep(0.08, 0.8, pressure)
   );
+}
+
+function variedContactHalf(
+  base: number,
+  first: GeometryCell,
+  orientation: "horizontal" | "vertical",
+  side: "negative" | "positive",
+  supported: boolean,
+  pressure: number,
+  irregularity: number,
+): number {
+  const salt =
+    (orientation === "horizontal" ? 20 : 30) +
+    (side === "negative" ? 0 : 1);
+  const amplitude = supported ? 0.012 : 0.026;
+  const variation =
+    signedCoordinateNoise(first.row, first.column, salt) *
+    amplitude *
+    clamp01(irregularity) *
+    smoothstep(0.45, 1, pressure);
+  return Math.max(0, Math.min(0.49, base + variation));
 }
 
 function hasCell(
@@ -145,6 +203,7 @@ function contactProfile(
   firstInput: GeometryCell,
   secondInput: GeometryCell,
   pressure: number,
+  irregularity: number,
   lookup: ReadonlyMap<string, GeometryCell>,
 ): BeadFusionContact {
   const horizontal =
@@ -175,14 +234,36 @@ function contactProfile(
       hasCell(lookup, second.row, second.column + 1);
   const internalHalf = internalContactHalfFor(pressure);
   const boundaryHalf = boundaryContactHalfFor(pressure);
+  const negativeBase = negativeSupported
+    ? internalHalf
+    : boundaryHalf;
+  const positiveBase = positiveSupported
+    ? internalHalf
+    : boundaryHalf;
   return {
     orientation: horizontal ? "horizontal" : "vertical",
     firstRow: first.row,
     firstColumn: first.column,
     negativeSupported,
     positiveSupported,
-    negativeHalf: negativeSupported ? internalHalf : boundaryHalf,
-    positiveHalf: positiveSupported ? internalHalf : boundaryHalf,
+    negativeHalf: variedContactHalf(
+      negativeBase,
+      first,
+      horizontal ? "horizontal" : "vertical",
+      "negative",
+      negativeSupported,
+      pressure,
+      irregularity,
+    ),
+    positiveHalf: variedContactHalf(
+      positiveBase,
+      first,
+      horizontal ? "horizontal" : "vertical",
+      "positive",
+      positiveSupported,
+      pressure,
+      irregularity,
+    ),
   };
 }
 
@@ -212,14 +293,13 @@ function bulgeTowardJunction(
   localY: number,
   radius: number,
   contactReach: number,
-  pressure: number,
+  fusionWeight: number,
 ): FusionPoint {
   const angleFromDiagonal = Math.abs(
     Math.atan2(Math.abs(localY), Math.abs(localX)) - Math.PI / 4,
   );
   const angularWeight =
     1 - smoothstep(Math.PI / 18, Math.PI / 4, angleFromDiagonal);
-  const fusionWeight = smoothstep(0.55, 1, pressure);
   const cosine = localX / radius;
   const sine = localY / radius;
   const squareRadius =
@@ -240,9 +320,25 @@ function contourPoints(
   pressure: number,
   irregularity: number,
   lookup: ReadonlyMap<string, GeometryCell>,
+  centers: ReadonlyMap<string, FusionPoint>,
+  columns: number,
+  rows: number,
 ): FusionPoint[] {
-  const center = centerFor(cell, irregularity);
+  const center = centers.get(coordinateKey(cell.row, cell.column));
+  if (!center) {
+    throw new TypeError("Fusion contour centre is missing.");
+  }
   const radius = outerRadiusFor(pressure);
+  const shapeVariation =
+    clamp01(irregularity) * smoothstep(0.22, 1, pressure);
+  const radiusXDelta =
+    signedCoordinateNoise(cell.row, cell.column, 2) *
+    MAX_IRREGULAR_RADIUS_DELTA *
+    shapeVariation;
+  const radiusYDelta =
+    signedCoordinateNoise(cell.row, cell.column, 3) *
+    MAX_IRREGULAR_RADIUS_DELTA *
+    shapeVariation;
   const contactReach = contactReachFor(pressure, irregularity);
   const right = lookup.get(coordinateKey(cell.row, cell.column + 1));
   const left = lookup.get(coordinateKey(cell.row, cell.column - 1));
@@ -250,20 +346,23 @@ function contourPoints(
   const above = lookup.get(coordinateKey(cell.row - 1, cell.column));
   const profiles = {
     right: right
-      ? contactProfile(cell, right, pressure, lookup)
+      ? contactProfile(cell, right, pressure, irregularity, lookup)
       : null,
-    left: left ? contactProfile(cell, left, pressure, lookup) : null,
+    left: left
+      ? contactProfile(cell, left, pressure, irregularity, lookup)
+      : null,
     below: below
-      ? contactProfile(cell, below, pressure, lookup)
+      ? contactProfile(cell, below, pressure, irregularity, lookup)
       : null,
     above: above
-      ? contactProfile(cell, above, pressure, lookup)
+      ? contactProfile(cell, above, pressure, irregularity, lookup)
       : null,
   };
   const junctions = [
     {
       signX: 1,
       signY: 1,
+      diagonal: hasCell(lookup, cell.row + 1, cell.column + 1),
       complete: Boolean(
         right &&
           below &&
@@ -273,6 +372,7 @@ function contourPoints(
     {
       signX: -1,
       signY: 1,
+      diagonal: hasCell(lookup, cell.row + 1, cell.column - 1),
       complete: Boolean(
         left &&
           below &&
@@ -282,6 +382,7 @@ function contourPoints(
     {
       signX: 1,
       signY: -1,
+      diagonal: hasCell(lookup, cell.row - 1, cell.column + 1),
       complete: Boolean(
         right &&
           above &&
@@ -291,19 +392,33 @@ function contourPoints(
     {
       signX: -1,
       signY: -1,
+      diagonal: hasCell(lookup, cell.row - 1, cell.column - 1),
       complete: Boolean(
         left &&
           above &&
           hasCell(lookup, cell.row - 1, cell.column - 1),
       ),
     },
-  ].filter(({ complete }) => complete);
+  ]
+    .filter(({ diagonal }) => diagonal)
+    .map(({ signX, signY, complete }) => ({
+      signX,
+      signY,
+      fusionWeight: complete
+        ? smoothstep(0.04, 0.7, pressure)
+        : pressure === 1
+          ? 1
+          : 0,
+    }))
+    .filter(({ fusionWeight }) => fusionWeight > 0);
   const points: FusionPoint[] = [];
 
   for (let index = 0; index < DEFAULT_SAMPLE_COUNT; index += 1) {
     const angle = (Math.PI * 2 * index) / DEFAULT_SAMPLE_COUNT;
-    let localX = Math.cos(angle) * radius;
-    let localY = Math.sin(angle) * radius;
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    let localX = cosine * radius;
+    let localY = sine * radius;
     const junction = junctions.find(
       ({ signX, signY }) =>
         Math.sign(localX) === signX && Math.sign(localY) === signY,
@@ -314,11 +429,13 @@ function contourPoints(
         localY,
         radius,
         contactReach,
-        pressure,
+        junction.fusionWeight,
       );
       localX = bulged.x;
       localY = bulged.y;
     }
+    localX += cosine * radiusXDelta;
+    localY += sine * radiusYDelta;
     let x = center.x + localX;
     let y = center.y + localY;
 
@@ -378,7 +495,10 @@ function contourPoints(
         pressure,
       );
     }
-    points.push({ x, y });
+    points.push({
+      x: Math.max(0, Math.min(columns, x)),
+      y: Math.max(0, Math.min(rows, y)),
+    });
   }
   return points;
 }
@@ -435,20 +555,26 @@ export function buildBeadFusionGeometry(
   const normalizedIrregularity = clamp01(irregularity / 100);
   const occupied: GeometryCell[] = project.cells.flatMap(
     (cell, cellIndex) =>
-      cell.kind === "empty"
-        ? []
-        : [
+      cell.kind === "color"
+        ? [
             {
               cellIndex,
               row: Math.floor(cellIndex / project.columns),
               column: cellIndex % project.columns,
             },
-          ],
+          ]
+        : [],
   );
   const lookup = new Map(
     occupied.map((cell) => [
       coordinateKey(cell.row, cell.column),
       cell,
+    ]),
+  );
+  const centers = new Map(
+    occupied.map((cell) => [
+      coordinateKey(cell.row, cell.column),
+      centerFor(cell, pressure, normalizedIrregularity),
     ]),
   );
   const contacts: BeadFusionContact[] = [];
@@ -460,38 +586,83 @@ export function buildBeadFusionGeometry(
       coordinateKey(cell.row + 1, cell.column),
     );
     if (right) {
-      contacts.push(contactProfile(cell, right, pressure, lookup));
+      contacts.push(
+        contactProfile(
+          cell,
+          right,
+          pressure,
+          normalizedIrregularity,
+          lookup,
+        ),
+      );
     }
     if (below) {
-      contacts.push(contactProfile(cell, below, pressure, lookup));
+      contacts.push(
+        contactProfile(
+          cell,
+          below,
+          pressure,
+          normalizedIrregularity,
+          lookup,
+        ),
+      );
     }
   }
-  const junctions = occupied.flatMap((cell) =>
-    hasCell(lookup, cell.row, cell.column + 1) &&
-    hasCell(lookup, cell.row + 1, cell.column) &&
-    hasCell(lookup, cell.row + 1, cell.column + 1)
-      ? [{ x: cell.column + 1, y: cell.row + 1 }]
-      : [],
-  );
+  const junctions = occupied.flatMap((cell) => {
+    const cells = [
+      lookup.get(coordinateKey(cell.row, cell.column)),
+      lookup.get(coordinateKey(cell.row, cell.column + 1)),
+      lookup.get(coordinateKey(cell.row + 1, cell.column)),
+      lookup.get(coordinateKey(cell.row + 1, cell.column + 1)),
+    ];
+    const junctionCenters: FusionPoint[] = [];
+    for (const junctionCell of cells) {
+      if (!junctionCell) return [];
+      const junctionCenter = centers.get(
+        coordinateKey(junctionCell.row, junctionCell.column),
+      );
+      if (!junctionCenter) return [];
+      junctionCenters.push(junctionCenter);
+    }
+    return [
+      {
+        x:
+          junctionCenters.reduce(
+            (sum, entry) => sum + entry.x,
+            0,
+          ) / 4,
+        y:
+          junctionCenters.reduce(
+            (sum, entry) => sum + entry.y,
+            0,
+          ) / 4,
+      },
+    ];
+  });
   return {
     contours: occupied.map((cell) => ({
       cellIndex: cell.cellIndex,
       row: cell.row,
       column: cell.column,
-      center: centerFor(cell, normalizedIrregularity),
+      center: centers.get(coordinateKey(cell.row, cell.column))!,
+      ownershipBias: ownershipBiasFor(
+        cell,
+        pressure,
+        normalizedIrregularity,
+      ),
       points: contourPoints(
         cell,
         pressure,
         normalizedIrregularity,
         lookup,
+        centers,
+        project.columns,
+        project.rows,
       ),
     })),
     contacts,
     junctions,
-    junctionRadius:
-      compression === 100
-        ? 0
-        : 0.075 * Math.pow(1 - pressure, 1.35),
+    junctionRadius: junctionRadiusFor(pressure),
     outerRadius: outerRadiusFor(pressure),
     holeRadius: holeRadiusFor(pressure),
   };

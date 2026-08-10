@@ -1,10 +1,12 @@
 import { zlibSync, unzlibSync } from "fflate";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createBeadProject } from "../src/domain/project";
 import { renderBeadProject } from "../src/domain/renderer";
+import { renderBeadProjectSvg } from "../src/domain/svgRenderer";
 import { BEAD_MODULE_VERSION } from "../src/domain/types";
 import {
+  handoffPreparedBeadImage,
   prepareBeadHandoff,
   toWorkshopImageHandoff,
 } from "../src/host/handoff";
@@ -129,6 +131,52 @@ const pngCodec: BeadImageCodec = {
 };
 
 describe("bead handoff", () => {
+  it("writes bead holes and junction reliefs into printable path geometry", () => {
+    const project = createBeadProject({
+      projectId: "native-svg-reliefs",
+      moduleVersion: "1.0.0",
+      now: "2026-08-02T00:00:00.000Z",
+      rows: 2,
+      columns: 2,
+      palette: [[250, 20, 30]],
+      cells: Array.from(
+        { length: 4 },
+        () => ({ kind: "color", paletteIndex: 0 }) as const,
+      ),
+      compression: 50,
+    });
+
+    const svg = renderBeadProjectSvg(project);
+
+    expect(svg).not.toContain("<mask");
+    expect(svg).not.toContain("<defs");
+    expect(svg).toContain('fill-rule="evenodd"');
+    expect((svg.match(/\bM /g) ?? []).length).toBeGreaterThan(4);
+  });
+
+  it("embeds the exact physical millimeter size in native SVG handoffs", () => {
+    const project = createBeadProject({
+      projectId: "native-svg-physical-size",
+      moduleVersion: "1.0.0",
+      now: "2026-08-02T00:00:00.000Z",
+      rows: 2,
+      columns: 3,
+      palette: [[250, 20, 30]],
+      cells: Array.from(
+        { length: 6 },
+        () => ({ kind: "color", paletteIndex: 0 }) as const,
+      ),
+      beadPitchMm: 2.6,
+      compression: 50,
+    });
+
+    const svg = renderBeadProjectSvg(project);
+
+    expect(svg).toContain('width="7.8mm"');
+    expect(svg).toContain('height="5.2mm"');
+    expect(svg).toContain('viewBox="0 0 3 2"');
+  });
+
   it("hands off source colors while naming the previewed print library", async () => {
     const project = createBeadProject({
       projectId: "handoff-source",
@@ -163,6 +211,9 @@ describe("bead handoff", () => {
     );
     const handoff = toWorkshopImageHandoff(prepared);
     const decoded = decodePng(new Uint8Array(handoff.pngBytes));
+    const svg = new TextDecoder().decode(
+      new Uint8Array(handoff.svgBytes),
+    );
     const centre = (16 * decoded.width + 16) * 4;
 
     expect([...decoded.rgba.slice(centre, centre + 3)]).toEqual(
@@ -181,6 +232,7 @@ describe("bead handoff", () => {
       columns: 1,
       pitchMm: 2.6,
     });
+    expect(handoff.recommendedTotalThicknessMm).toBe(1.85);
     expect(handoff.recipeSource).toMatchObject({
       projectSchemaVersion: "bead-project/v1",
       renderSchemaVersion: "bead-render/v1",
@@ -189,5 +241,50 @@ describe("bead handoff", () => {
     expect(handoff.recipeSource.payload).toMatchObject({
       irregularity: 42,
     });
+    expect(svg).toContain('data-lumina-origin="workshop-handoff"');
+    expect(svg).toContain('viewBox="0 0 1 1"');
+    expect(svg).toContain('fill="rgb(250,20,30)"');
+    expect((svg.match(/\bL /g) ?? []).length).toBeGreaterThanOrEqual(56);
+    expect(svg).not.toContain("<image");
+  });
+
+  it("retries with only the PNG fallback for a legacy v1 host", async () => {
+    const project = createBeadProject({
+      projectId: "legacy-fallback",
+      moduleVersion: "1.0.0",
+      now: "2026-07-30T00:00:00.000Z",
+      rows: 1,
+      columns: 1,
+      palette: [[10, 20, 30]],
+      cells: [{ kind: "color", paletteIndex: 0 }],
+      compression: 100,
+    });
+    const prepared = await prepareBeadHandoff(
+      project,
+      renderBeadProject(project, {
+        compression: 100,
+        pixelsPerCell: 32,
+      }),
+      pngCodec,
+      null,
+    );
+    const image = vi
+      .fn()
+      .mockRejectedValueOnce({ code: "rpc-payload-invalid" })
+      .mockResolvedValueOnce({ status: "completed" });
+
+    await expect(
+      handoffPreparedBeadImage({ handoff: { image } }, prepared),
+    ).resolves.toEqual({ status: "completed" });
+
+    expect(image).toHaveBeenCalledTimes(2);
+    expect(image.mock.calls[0][0].svgBytes).toBeInstanceOf(ArrayBuffer);
+    expect(image.mock.calls[0][0].recommendedTotalThicknessMm).toBe(1.85);
+    expect(image.mock.calls[1][0].svgBytes).toBeUndefined();
+    expect(
+      image.mock.calls[1][0].recommendedTotalThicknessMm,
+    ).toBeUndefined();
+    expect(new Uint8Array(image.mock.calls[1][0].pngBytes).slice(0, 8))
+      .toEqual(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
   });
 });

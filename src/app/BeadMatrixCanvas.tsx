@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, type PointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  type MouseEvent,
+  type PointerEvent,
+} from "react";
 
 import type { BeadRenderResult } from "../domain/renderer";
 import type { BeadProject } from "../domain/types";
@@ -16,6 +22,7 @@ interface BeadMatrixCanvasProps {
   showGrid?: boolean;
   selectedCellIndex?: number | null;
   onPickCell?(cellIndex: number): void;
+  allowDrag?: boolean;
   viewport?: BeadMatrixViewport;
   className?: string;
 }
@@ -71,7 +78,7 @@ function drawMatrix(
         const color = project.palette[cell.paletteIndex];
         context.fillStyle = `rgb(${color[0]} ${color[1]} ${color[2]})`;
         context.fillRect(x, y, scale, scale);
-      } else if (cell.kind === "transparent-support") {
+      } else {
         context.fillStyle = "rgba(14, 165, 233, 0.18)";
         context.fillRect(x, y, scale, scale);
         context.strokeStyle = "rgba(14, 165, 233, 0.82)";
@@ -123,6 +130,7 @@ export function BeadMatrixCanvas({
   showGrid = true,
   selectedCellIndex = null,
   onPickCell,
+  allowDrag = true,
   viewport,
   className,
 }: BeadMatrixCanvasProps) {
@@ -172,7 +180,9 @@ export function BeadMatrixCanvas({
   ]);
 
   const cellIndexAtPointer = (
-    event: PointerEvent<HTMLCanvasElement>,
+    event:
+      | PointerEvent<HTMLCanvasElement>
+      | MouseEvent<HTMLCanvasElement>,
   ): number | null => {
     if (!onPickCell) return null;
     const rectangle = event.currentTarget.getBoundingClientRect();
@@ -207,7 +217,11 @@ export function BeadMatrixCanvas({
     return row * project.columns + column;
   };
 
-  const pickAtPointer = (event: PointerEvent<HTMLCanvasElement>) => {
+  const pickAtPointer = (
+    event:
+      | PointerEvent<HTMLCanvasElement>
+      | MouseEvent<HTMLCanvasElement>,
+  ) => {
     const cellIndex = cellIndexAtPointer(event);
     if (
       cellIndex === null ||
@@ -226,8 +240,10 @@ export function BeadMatrixCanvas({
       aria-label={ariaLabel}
       onPointerDown={(event) => {
         if (!onPickCell) return;
-        draggingRef.current = true;
+        draggingRef.current = false;
         lastPickedCellRef.current = null;
+        if (!allowDrag) return;
+        draggingRef.current = true;
         event.currentTarget.setPointerCapture?.(event.pointerId);
         pickAtPointer(event);
       }}
@@ -237,14 +253,23 @@ export function BeadMatrixCanvas({
       onPointerUp={(event) => {
         draggingRef.current = false;
         lastPickedCellRef.current = null;
-        event.currentTarget.releasePointerCapture?.(event.pointerId);
+        if (allowDrag) {
+          event.currentTarget.releasePointerCapture?.(event.pointerId);
+        }
       }}
       onPointerCancel={() => {
         draggingRef.current = false;
         lastPickedCellRef.current = null;
       }}
+      onClick={(event) => {
+        if (!onPickCell || allowDrag) return;
+        lastPickedCellRef.current = null;
+        pickAtPointer(event);
+        lastPickedCellRef.current = null;
+      }}
       className={cx(
         "bead-canvas",
+        "bead-canvas--matrix",
         onPickCell && "bead-canvas--interactive",
         className,
       )}

@@ -22,7 +22,6 @@ function requestFor(
   rows: number,
   columns: number,
   emptyCellIndex: number,
-  transparentSupportSampleCellIndex: number | null = null,
 ): RecognitionRequest {
   const suggestion = suggestGrid(source, mode);
   return {
@@ -32,7 +31,6 @@ function requestFor(
     columns,
     geometry: suggestion.geometry,
     emptySelection: { kind: "sample", cellIndex: emptyCellIndex },
-    transparentSupportSampleCellIndex,
     orientation: {
       rotation: 0,
       flipHorizontal: false,
@@ -182,7 +180,7 @@ describe("bead recognition", () => {
     );
   });
 
-  it("samples ring annuli and preserves a transparent support cell", () => {
+  it("samples every occupied ring as a printable color", () => {
     const source = makeRingFixture({
       rows: 3,
       columns: 3,
@@ -190,12 +188,12 @@ describe("bead recognition", () => {
     });
 
     const result = recognizeBeadPattern(
-      requestFor(source, "ring-preview", 3, 3, 0, 2),
+      requestFor(source, "ring-preview", 3, 3, 0),
     );
 
     expect(result.cells[0]).toEqual({ kind: "empty" });
-    expect(result.cells[2]).toEqual({ kind: "transparent-support" });
-    expect(result.palette).not.toContainEqual([205, 226, 228]);
+    expect(result.cells[2]?.kind).toBe("color");
+    expect(result.palette).toContainEqual([205, 226, 228]);
     expect(result.cells[1]?.kind).toBe("color");
   });
 });

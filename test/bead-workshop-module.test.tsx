@@ -81,7 +81,7 @@ function recognitionResult(
       index % 4 === 2
         ? ({ kind: "empty" } as const)
         : index % 4 === 3
-          ? ({ kind: "transparent-support" } as const)
+          ? ({ kind: "empty" } as const)
           : ({
               kind: "color",
               paletteIndex: index % 2,
@@ -211,7 +211,7 @@ function projectWithSource(
     cells: [
       { kind: "color", paletteIndex: 0 },
       { kind: "empty" },
-      { kind: "transparent-support" },
+      { kind: "empty" },
       { kind: "color", paletteIndex: 1 },
     ],
     source: {
@@ -233,7 +233,6 @@ function projectWithSource(
         flipVertical: false,
       },
       emptySelection: { kind: "none" },
-      transparentSupportSampleCellIndex: null,
     },
     beadPitchMm: 3.1,
     compression: 77,
@@ -489,6 +488,62 @@ describe("BeadWorkshopModule", () => {
     harness.close();
   });
 
+  it("replaces an unsafe screenshot guess with the post-crop suggestion", async () => {
+    const engine = new FakeEngine({
+      classifications: [
+        {
+          mode: "numbered-grid",
+          confidence: 0.94,
+          scores: {
+            "numbered-grid": 0.94,
+            "hard-pixel": 0.15,
+            "ring-preview": 0.73,
+          },
+          requiresCrop: true,
+        },
+        {
+          mode: "ring-preview",
+          confidence: 0.91,
+          scores: {
+            "numbered-grid": 0.2,
+            "hard-pixel": 0.15,
+            "ring-preview": 0.91,
+          },
+          requiresCrop: false,
+        },
+      ],
+    });
+    const { client, harness } = await startPickedCalibration(
+      engine,
+      sourceRaster(30, 20),
+      "screenshot.png",
+    );
+
+    expect(
+      await screen.findByText(
+        "检测到截图边框、多图布局或图纸未完整显示，请先裁剪并只保留一张完整图纸。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "图纸类型" }),
+    ).toHaveValue("numbered-grid");
+
+    await openCropAndSet({ x: 5, y: 0, width: 20, height: 20 });
+
+    await screen.findByText("建议：圆豆俯视图 · 置信度 91%");
+    expect(
+      screen.getByRole("combobox", { name: "图纸类型" }),
+    ).toHaveValue("ring-preview");
+    expect(
+      screen.queryByText(
+        "检测到截图边框、多图布局或图纸未完整显示，请先裁剪并只保留一张完整图纸。",
+      ),
+    ).not.toBeInTheDocument();
+
+    client.close();
+    harness.close();
+  });
+
   it("wires recalibration, committed draft restoration, rollback, crop, and new-project navigation", async () => {
     const raster = sourceRaster(30, 20);
     const engine = new FakeEngine({
@@ -535,14 +590,10 @@ describe("BeadWorkshopModule", () => {
       screen.getByRole("button", { name: "选择一个空位" }),
     );
     fireEvent.pointerDown(canvas, { clientX: 120, clientY: 80 });
-    fireEvent.click(
-      screen.getByRole("button", { name: "选择透明支撑" }),
-    );
-    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 80 });
     expect(screen.getByText("空位样本：第 1 格")).toBeInTheDocument();
     expect(
-      screen.getByText("透明支撑样本：第 2 格"),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "选择透明支撑" }),
+    ).not.toBeInTheDocument();
 
     await recognizeAndOpenEditor();
     await waitFor(() => {
@@ -558,7 +609,6 @@ describe("BeadWorkshopModule", () => {
             flipVertical: false,
           },
           emptySelection: { kind: "sample", cellIndex: 0 },
-          transparentSupportSampleCellIndex: 1,
         },
       });
     });
@@ -587,9 +637,6 @@ describe("BeadWorkshopModule", () => {
       screen.getByRole("button", { name: "水平翻转" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("空位样本：第 1 格")).toBeInTheDocument();
-    expect(
-      screen.getByText("透明支撑样本：第 2 格"),
-    ).toBeInTheDocument();
     await expectCrop({ x: 5, y: 5, width: 20, height: 10 });
 
     await returnToEditor();
@@ -666,7 +713,6 @@ describe("BeadWorkshopModule", () => {
           flipVertical: false,
         },
         emptySelection: { kind: "sample", cellIndex: 0 },
-        transparentSupportSampleCellIndex: 1,
       },
     });
     const { client, harness } = await startRestoredEditor(
@@ -697,9 +743,6 @@ describe("BeadWorkshopModule", () => {
       screen.getByRole("button", { name: "水平翻转" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("空位样本：第 1 格")).toBeInTheDocument();
-    expect(
-      screen.getByText("透明支撑样本：第 2 格"),
-    ).toBeInTheDocument();
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: "识别拼豆矩阵" }),
@@ -723,7 +766,6 @@ describe("BeadWorkshopModule", () => {
           flipVertical: false,
         },
         emptySelection: { kind: "none" },
-        transparentSupportSampleCellIndex: null,
       },
     });
     const engine = new FakeEngine({
@@ -780,7 +822,6 @@ describe("BeadWorkshopModule", () => {
           flipVertical: false,
         },
         emptySelection: { kind: "none" },
-        transparentSupportSampleCellIndex: null,
       },
     });
     const { client, harness } = await startRestoredEditor(
@@ -1660,7 +1701,7 @@ describe("BeadWorkshopModule", () => {
     );
 
     view.unmount();
-    expect(engine.dispose).toHaveBeenCalledTimes(1);
+    expect(engine.dispose).not.toHaveBeenCalled();
     harness.close();
   });
 
@@ -1870,7 +1911,7 @@ describe("BeadWorkshopModule", () => {
     harness.close();
   });
 
-  it("sends exact PNG handoff bytes and retries only after confirmation", async () => {
+  it("sends native SVG with a PNG fallback and retries only after confirmation", async () => {
     const harness = createSdkHarness({
       pickedImage: {
         name: "pattern.png",
@@ -1914,7 +1955,7 @@ describe("BeadWorkshopModule", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "2 × 2 格 · 5.2 × 5.2 mm · 压合 50% · 不规则 0%",
+        "2 × 2 格 · 5.2 × 5.2 × 2.35 mm · 压合 50% · 不规则 0%",
       ),
     ).toBeInTheDocument();
     expect(harness.payloads("handoff.image")).toHaveLength(0);
@@ -1935,6 +1976,7 @@ describe("BeadWorkshopModule", () => {
       recommendedHeightMm: number;
       layout: { rows: number; columns: number; pitchMm: number };
       preserveCanvasBounds: boolean;
+      svgBytes: ArrayBuffer;
     };
     expect(first).toMatchObject({
       pixelWidth: 64,
@@ -1949,6 +1991,9 @@ describe("BeadWorkshopModule", () => {
       },
       preserveCanvasBounds: true,
     });
+    expect(
+      new TextDecoder().decode(new Uint8Array(first.svgBytes)),
+    ).toContain('data-lumina-origin="workshop-handoff"');
 
     fireEvent.click(
       screen.getByRole("button", { name: "替换并继续" }),
@@ -1956,6 +2001,18 @@ describe("BeadWorkshopModule", () => {
     await waitFor(() => {
       expect(harness.payloads("handoff.image")).toHaveLength(2);
     });
+    client.close();
+    harness.close();
+  });
+
+  it("does not rasterize an editor preview that is rendered from native SVG", async () => {
+    const project = projectWithSource();
+    const engine = new FakeEngine();
+    const renderSpy = vi.spyOn(engine, "render");
+    const { client, harness } = await startRestoredEditor(project, engine);
+
+    expect(renderSpy).not.toHaveBeenCalled();
+
     client.close();
     harness.close();
   });

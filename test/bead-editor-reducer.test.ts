@@ -55,7 +55,7 @@ function makeCheckpointProject(): BeadProject {
     cells: [
       { kind: "color", paletteIndex: 0 },
       { kind: "empty" },
-      { kind: "transparent-support" },
+      { kind: "empty" },
       { kind: "color", paletteIndex: 1 },
       { kind: "empty" },
       { kind: "color", paletteIndex: 0 },
@@ -63,7 +63,7 @@ function makeCheckpointProject(): BeadProject {
       { kind: "empty" },
       { kind: "color", paletteIndex: 1 },
       { kind: "empty" },
-      { kind: "transparent-support" },
+      { kind: "empty" },
       { kind: "empty" },
     ],
     calibration: {
@@ -76,7 +76,6 @@ function makeCheckpointProject(): BeadProject {
         flipVertical: false,
       },
       emptySelection: { kind: "sample", cellIndex: 1 },
-      transparentSupportSampleCellIndex: 2,
     },
     confidenceIssues: [
       {
@@ -108,7 +107,7 @@ function makeRecognitionReplacement(): BeadProject {
     cells: [
       { kind: "empty" },
       { kind: "color", paletteIndex: 0 },
-      { kind: "transparent-support" },
+      { kind: "empty" },
       { kind: "color", paletteIndex: 0 },
       { kind: "empty" },
       { kind: "empty" },
@@ -123,7 +122,6 @@ function makeRecognitionReplacement(): BeadProject {
         flipVertical: true,
       },
       emptySelection: { kind: "sample", cellIndex: 0 },
-      transparentSupportSampleCellIndex: 2,
     },
     confidenceIssues: [
       {
@@ -169,7 +167,7 @@ function makeHighIndexReplacement(): BeadProject {
       { kind: "color", paletteIndex: 2 },
       { kind: "color", paletteIndex: 3 },
       { kind: "empty" },
-      { kind: "transparent-support" },
+      { kind: "empty" },
       { kind: "empty" },
     ],
     confidenceIssues: [
@@ -219,7 +217,7 @@ describe("bead editor reducer", () => {
     expect(state.selectedCellIndex).toBe(7);
   });
 
-  it("paints, erases, and places transparent support with reversible patches", () => {
+  it("paints and erases with reversible patches", () => {
     let state = createBeadEditorState(makeProject());
 
     state = beadEditorReducer(state, {
@@ -253,15 +251,6 @@ describe("bead editor reducer", () => {
       cellIndex: 3,
     });
     expect(state.present.cells[3]).toEqual({ kind: "empty" });
-
-    state = beadEditorReducer(state, {
-      type: "apply-tool",
-      tool: "support",
-      cellIndex: 3,
-    });
-    expect(state.present.cells[3]).toEqual({
-      kind: "transparent-support",
-    });
   });
 
   it("flood-fills only the four-neighbour connected target region", () => {
@@ -294,6 +283,54 @@ describe("bead editor reducer", () => {
       { kind: "empty" },
       { kind: "color", paletteIndex: 0 },
       { kind: "color", paletteIndex: 1 },
+      { kind: "empty" },
+      { kind: "color", paletteIndex: 0 },
+      { kind: "empty" },
+      { kind: "empty" },
+      { kind: "empty" },
+      { kind: "empty" },
+      { kind: "color", paletteIndex: 0 },
+    ]);
+    const historyEntry = state.past[0];
+    expect(historyEntry?.kind).toBe("patch");
+    if (!historyEntry || historyEntry.kind !== "patch") {
+      throw new Error("Expected a patch history entry.");
+    }
+    expect(historyEntry.cellPatches).toHaveLength(3);
+
+    state = beadEditorReducer(state, { type: "undo" });
+    expect(state.present.cells).toEqual(cells);
+  });
+
+  it("flood-erases only the clicked four-neighbour region as one undo", () => {
+    const cells: BeadCell[] = [
+      { kind: "color", paletteIndex: 0 },
+      { kind: "color", paletteIndex: 0 },
+      { kind: "empty" },
+      { kind: "color", paletteIndex: 0 },
+      { kind: "color", paletteIndex: 0 },
+      { kind: "empty" },
+      { kind: "color", paletteIndex: 0 },
+      { kind: "empty" },
+      { kind: "empty" },
+      { kind: "empty" },
+      { kind: "empty" },
+      { kind: "color", paletteIndex: 0 },
+    ];
+    let state = createBeadEditorState(makeProject(cells));
+
+    state = beadEditorReducer(state, {
+      type: "apply-tool",
+      tool: "eraseFill",
+      cellIndex: 0,
+    });
+
+    expect(state.present.cells).toEqual([
+      { kind: "empty" },
+      { kind: "empty" },
+      { kind: "empty" },
+      { kind: "color", paletteIndex: 0 },
+      { kind: "empty" },
       { kind: "empty" },
       { kind: "color", paletteIndex: 0 },
       { kind: "empty" },
@@ -351,8 +388,9 @@ describe("bead editor reducer", () => {
 
     state = beadEditorReducer(state, {
       type: "apply-tool",
-      tool: "support",
+      tool: "paint",
       cellIndex: 1,
+      paletteIndex: 0,
     });
     expect(state.future).toEqual([]);
     expect(

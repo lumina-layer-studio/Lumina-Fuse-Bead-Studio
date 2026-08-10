@@ -18,12 +18,10 @@ const PALETTE: RgbColor[] = [
 ];
 
 function byteToCell(value: number): BeadCell {
-  switch (value % 4) {
+  switch (value % 3) {
     case 0:
       return { kind: "empty" };
     case 1:
-      return { kind: "transparent-support" };
-    case 2:
       return { kind: "color", paletteIndex: 0 };
     default:
       return { kind: "color", paletteIndex: 1 };

@@ -41,7 +41,6 @@ function initialDraft(
       flipVertical: false,
     },
     emptySelection: null,
-    transparentSupportSampleCellIndex: null,
     ...overrides,
   };
 }
@@ -120,7 +119,37 @@ describe("BeadCalibrationStep", () => {
     expect(onRecognize).toHaveBeenCalledTimes(1);
   });
 
-  it("maps source-canvas picks to explicit empty and support samples", () => {
+  it("blocks recognition until an embedded or multi-pattern image is cropped", () => {
+    render(
+      <Harness
+        draft={initialDraft({ emptySelection: { kind: "none" } })}
+        classification={{
+          mode: "numbered-grid",
+          confidence: 0.94,
+          scores: {
+            "numbered-grid": 0.94,
+            "hard-pixel": 0.15,
+            "ring-preview": 0.73,
+          },
+          requiresCrop: true,
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "检测到截图边框、多图布局或图纸未完整显示，请先裁剪并只保留一张完整图纸。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "裁剪图案" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "识别拼豆矩阵" }),
+    ).toBeDisabled();
+  });
+
+  it("maps source-canvas picks to an explicit empty sample only", () => {
     render(<Harness />);
     const canvas = screen.getByRole("img", {
       name: "拼豆图纸网格校准",
@@ -145,17 +174,12 @@ describe("BeadCalibrationStep", () => {
       clientY: 150,
     });
     expect(screen.getByText("空位样本：第 7 格")).toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "选择透明支撑" }),
-    );
-    fireEvent.pointerDown(canvas, {
-      clientX: 150,
-      clientY: 250,
-    });
     expect(
-      screen.getByText("透明支撑样本：第 10 格"),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "选择透明支撑" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/透明支撑样本/),
+    ).not.toBeInTheDocument();
   });
 
   it("updates orientation and rejects a visibly non-square grid", () => {

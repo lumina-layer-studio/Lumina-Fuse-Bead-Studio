@@ -5,8 +5,7 @@ import { cx } from "../ui/panelPrimitives";
 
 export type CalibrationPickMode =
   | "none"
-  | "empty"
-  | "transparent-support";
+  | "empty";
 
 interface BeadSourceCanvasProps {
   source: Raster;
@@ -16,7 +15,6 @@ interface BeadSourceCanvasProps {
   ariaLabel: string;
   pickMode?: CalibrationPickMode;
   emptyCellIndex?: number | null;
-  transparentSupportCellIndex?: number | null;
   onPickCell?(cellIndex: number): void;
   className?: string;
 }
@@ -88,7 +86,6 @@ export function BeadSourceCanvas({
   ariaLabel,
   pickMode = "none",
   emptyCellIndex = null,
-  transparentSupportCellIndex = null,
   onPickCell,
   className,
 }: BeadSourceCanvasProps) {
@@ -112,15 +109,6 @@ export function BeadSourceCanvas({
         "rgba(37, 99, 235, 0.26)",
       );
     }
-    if (transparentSupportCellIndex !== null) {
-      drawSelection(
-        context,
-        geometry,
-        columns,
-        transparentSupportCellIndex,
-        "rgba(14, 165, 233, 0.34)",
-      );
-    }
     drawGrid(context, geometry, rows, columns);
   }, [
     columns,
@@ -128,7 +116,6 @@ export function BeadSourceCanvas({
     geometry,
     rows,
     source,
-    transparentSupportCellIndex,
   ]);
 
   const handlePointer = (event: PointerEvent<HTMLCanvasElement>) => {

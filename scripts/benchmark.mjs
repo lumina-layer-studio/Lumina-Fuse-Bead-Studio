@@ -55,14 +55,46 @@ try {
   const { renderBeadProject } = await server.ssrLoadModule(
     "/src/domain/renderer.ts",
   );
+  const { buildBeadFusionPreviewSvg } = await server.ssrLoadModule(
+    "/src/domain/svgRenderer.ts",
+  );
   const previewProject = makeProject(createBeadProject, 52, 52);
   const fullProject = makeProject(createBeadProject, 104, 104);
+  const svgPreview911Project = {
+    ...makeProject(createBeadProject, 32, 39),
+    projectId: "benchmark-svg-32x39",
+    compression: 83,
+    irregularity: 45,
+    cells: Array.from({ length: 32 * 39 }, (_, index) =>
+      index % 4 === 0 || index % 37 === 0
+        ? { kind: "empty" }
+        : { kind: "color", paletteIndex: index % 4 },
+    ),
+  };
+  const svgPreview3532Project = {
+    ...makeProject(createBeadProject, 64, 69),
+    projectId: "benchmark-svg-64x69",
+    compression: 83,
+    irregularity: 45,
+    cells: Array.from({ length: 64 * 69 }, (_, index) =>
+      index % 5 === 0
+        ? { kind: "empty" }
+        : { kind: "color", paletteIndex: index % 4 },
+    ),
+  };
 
   // Warm the transform and JIT paths before measuring.
   renderBeadProject(makeProject(createBeadProject, 4, 4), {
     compression: 80,
     pixelsPerCell: 12,
   });
+  buildBeadFusionPreviewSvg(
+    {
+      ...makeProject(createBeadProject, 4, 4),
+      compression: 83,
+      irregularity: 45,
+    },
+  );
 
   const preview = elapsed(() =>
     renderBeadProject(previewProject, {
@@ -81,15 +113,27 @@ try {
     const fullCopy = new Uint8ClampedArray(full.value.data);
     return previewCopy.byteLength + fullCopy.byteLength;
   });
+  const svgPreview911 = elapsed(() =>
+    buildBeadFusionPreviewSvg(svgPreview911Project),
+  );
+  const svgPreview3532 = elapsed(() =>
+    buildBeadFusionPreviewSvg(svgPreview3532Project),
+  );
 
   const result = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     preview52Ms: Number(preview.milliseconds.toFixed(3)),
     full104Ms: Number(full.milliseconds.toFixed(3)),
     mainThreadMaxSliceMs: Number(transfer.milliseconds.toFixed(3)),
     peakTransferredBytes: transfer.value,
     releasedWorkerCount: 1,
     releasedBlobUrlCount: 1,
+    svgPreview911Ms: Number(
+      svgPreview911.milliseconds.toFixed(3),
+    ),
+    svgPreview3532Ms: Number(
+      svgPreview3532.milliseconds.toFixed(3),
+    ),
   };
 
   if (args.has("--check-regression")) {

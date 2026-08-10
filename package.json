@@ -1,6 +1,6 @@
 {
   "name": "@lumina-layer-studio/fuse-bead-studio",
-  "version": "1.0.8-dev.3",
+  "version": "1.0.8-dev.20",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.33.2",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@lumina/workshop-sdk": "https://github.com/lumina-layer-studio/Lumina-Workshop-SDK/releases/download/v1.0.1/lumina-workshop-sdk-1.0.1.tgz",
+    "polygon-clipping": "0.15.7",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },

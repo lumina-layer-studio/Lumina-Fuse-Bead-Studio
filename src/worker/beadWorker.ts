@@ -3,6 +3,7 @@ import {
   recognizeBeadPattern,
 } from "../domain/recognition";
 import { renderBeadProject } from "../domain/renderer";
+import { buildBeadFusionPreviewSvg } from "../domain/svgRenderer";
 import type {
   BeadWorkerRequest,
   BeadWorkerResponse,
@@ -56,14 +57,22 @@ export function processBeadWorkerRequest(
         result: recognizeBeadPattern(request.request),
       };
     }
+    if (request.type === "render") {
+      return {
+        id: request.id,
+        ok: true,
+        type: "render",
+        result: renderBeadProject(request.project, {
+          compression: request.compression,
+          pixelsPerCell: request.pixelsPerCell,
+        }),
+      };
+    }
     return {
       id: request.id,
       ok: true,
-      type: "render",
-      result: renderBeadProject(request.project, {
-        compression: request.compression,
-        pixelsPerCell: request.pixelsPerCell,
-      }),
+      type: "render-preview",
+      result: buildBeadFusionPreviewSvg(request.project),
     };
   } catch (error) {
     return {

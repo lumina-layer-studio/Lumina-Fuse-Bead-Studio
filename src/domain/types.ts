@@ -1,5 +1,5 @@
 export const BEAD_MODULE_ID = "lumina.bead-pattern" as const;
-export const BEAD_MODULE_VERSION = "1.0.8-dev.3" as const;
+export const BEAD_MODULE_VERSION = "1.0.8-dev.20" as const;
 export const BEAD_PROJECT_SCHEMA_VERSION = "bead-project/v1" as const;
 export const BEAD_RENDER_SCHEMA_VERSION = "bead-render/v1" as const;
 export const BEAD_RECIPE_PAYLOAD_VERSION = "bead-recipe/v1" as const;
@@ -12,8 +12,7 @@ export type RgbColor = [number, number, number];
 
 export type BeadCell =
   | { kind: "empty" }
-  | { kind: "color"; paletteIndex: number }
-  | { kind: "transparent-support" };
+  | { kind: "color"; paletteIndex: number };
 
 export type BeadInputMode =
   | "numbered-grid"
@@ -45,7 +44,6 @@ export interface BeadCalibration {
   origin: { x: number; y: number };
   orientation: BeadOrientation;
   emptySelection: BeadEmptySelection;
-  transparentSupportSampleCellIndex: number | null;
 }
 
 export interface BeadProjectSource {
@@ -137,6 +135,7 @@ export interface PatternClassification {
   mode: BeadInputMode | "ambiguous";
   confidence: number;
   scores: Record<BeadInputMode, number>;
+  requiresCrop?: boolean;
 }
 
 export interface GridSuggestion {
@@ -160,7 +159,6 @@ export interface RecognitionRequest {
   columns: number;
   geometry: BeadGridGeometry;
   emptySelection: BeadEmptySelection;
-  transparentSupportSampleCellIndex: number | null;
   orientation: BeadOrientation;
 }
 

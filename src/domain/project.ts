@@ -128,7 +128,7 @@ function validateCell(
   }
 
   const candidate = cell as Record<string, unknown>;
-  if (candidate.kind === "empty" || candidate.kind === "transparent-support") {
+  if (candidate.kind === "empty") {
     return;
   }
   if (
@@ -223,14 +223,6 @@ function validateCalibration(
     fail("invalid-calibration", "Empty-cell selection is invalid.");
   }
 
-  if (
-    candidate.transparentSupportSampleCellIndex !== null &&
-    (!Number.isInteger(candidate.transparentSupportSampleCellIndex) ||
-      (candidate.transparentSupportSampleCellIndex as number) < 0 ||
-      (candidate.transparentSupportSampleCellIndex as number) >= cellCount)
-  ) {
-    fail("invalid-calibration", "Support sample is outside the grid.");
-  }
 }
 
 function validateConfidenceIssues(
@@ -428,7 +420,6 @@ function defaultCalibration(): BeadCalibration {
       flipVertical: false,
     },
     emptySelection: { kind: "none" },
-    transparentSupportSampleCellIndex: null,
   };
 }
 
@@ -559,9 +550,6 @@ function cellToken(cell: BeadCell): number {
   if (cell.kind === "empty") {
     return -1;
   }
-  if (cell.kind === "transparent-support") {
-    return -2;
-  }
   return cell.paletteIndex;
 }
 
@@ -603,7 +591,7 @@ export function decodeBeadCellsRle(
       !Array.isArray(run) ||
       run.length !== 2 ||
       !Number.isInteger(run[0]) ||
-      (run[0] as number) < -2 ||
+      (run[0] as number) < -1 ||
       !Number.isInteger(run[1]) ||
       (run[1] as number) <= 0 ||
       cells.length + (run[1] as number) > expectedLength
@@ -614,9 +602,7 @@ export function decodeBeadCellsRle(
     const cell: BeadCell =
       token === -1
         ? { kind: "empty" }
-        : token === -2
-          ? { kind: "transparent-support" }
-          : { kind: "color", paletteIndex: token };
+        : { kind: "color", paletteIndex: token };
     for (let count = 0; count < (run[1] as number); count += 1) {
       cells.push(cell);
     }
@@ -732,7 +718,6 @@ export function restoreBeadProjectFromRecipeSource(
       origin: { x: 0, y: 0 },
       orientation: calibrationPayload.orientation as BeadOrientation,
       emptySelection: { kind: "none" },
-      transparentSupportSampleCellIndex: null,
     },
     confidenceIssues: [],
     beadPitchMm: payload.beadPitchMm as number,

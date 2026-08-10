@@ -24,7 +24,7 @@ function project() {
     cells: [
       { kind: "color", paletteIndex: 0 },
       { kind: "empty" },
-      { kind: "transparent-support" },
+      { kind: "color", paletteIndex: 1 },
     ],
   });
 }
@@ -161,7 +161,7 @@ describe("print color mapping", () => {
     expect(stale.previewPalette).toEqual(source.palette);
   });
 
-  it("changes only colored palette rendering, never empty or support identity", () => {
+  it("changes only palette rendering and preserves cell identity", () => {
     const source = project();
     const mapped = mapProjectToColorLibrary(source, library());
     const preview = projectForPrintPreview(source, mapped);
@@ -169,7 +169,7 @@ describe("print color mapping", () => {
     expect(preview.cells).toEqual([
       { kind: "color", paletteIndex: 0 },
       { kind: "empty" },
-      { kind: "transparent-support" },
+      { kind: "color", paletteIndex: 1 },
     ]);
     expect(preview.palette[0]).toEqual([227, 33, 42]);
     expect(source.cells).toEqual(preview.cells);

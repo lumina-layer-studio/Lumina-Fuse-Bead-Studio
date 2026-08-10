@@ -377,6 +377,55 @@ select:focus-visible,
   flex: 1 1 0;
 }
 
+.editor-tool-section,
+.editor-palette-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-tool-section > p,
+.editor-palette-section > p {
+  margin: 0;
+}
+
+.editor-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.editor-tool-button {
+  min-height: 54px;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 8px;
+}
+
+.editor-tool-button__icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+.editor-tool-hint {
+  min-height: 36px;
+  border: 1px solid
+    color-mix(in srgb, var(--bead-accent) 18%, var(--bead-border));
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: var(--bead-text-muted);
+  background: color-mix(in srgb, var(--bead-accent) 5%, transparent);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.editor-history-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .preview-mode,
 .mapping-action {
   display: flex;
@@ -477,6 +526,10 @@ select:focus-visible,
   background: var(--bead-surface-strong);
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
   image-rendering: pixelated;
+}
+
+.bead-canvas--matrix {
+  border-radius: 0;
 }
 
 .bead-fusion-preview {

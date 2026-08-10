@@ -46,7 +46,6 @@ describe("bead recognition properties", () => {
             columns,
             geometry,
             emptySelection: { kind: "sample", cellIndex: 0 },
-            transparentSupportSampleCellIndex: null,
             orientation: {
               rotation: 0,
               flipHorizontal: false,

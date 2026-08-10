@@ -15,12 +15,14 @@ import {
   makeGeneratedHardPixelChart,
   makeGeneratedRingChart,
   makeGuidedNumberedChart,
+  makeImplicitMardChart,
   makeLabeledNumberedChart,
   makeNearTieHardPixelChart,
   makeNonSquareChart,
   makeTransparentHardPixelChart,
   makeTwoPatternCanvas,
   makeWhiteOnWhiteChart,
+  resizeRasterNearest,
 } from "./helpers/chartFixtures";
 
 function recognize(
@@ -29,7 +31,6 @@ function recognize(
   rows: number,
   columns: number,
   emptyCellIndex = 0,
-  transparentSupportSampleCellIndex: number | null = null,
 ): ReturnType<typeof recognizeBeadPattern> {
   const suggestion = suggestGrid(source, mode);
   const geometry =
@@ -48,7 +49,6 @@ function recognize(
     columns,
     geometry,
     emptySelection: { kind: "sample", cellIndex: emptyCellIndex },
-    transparentSupportSampleCellIndex,
     orientation: {
       rotation: 0,
       flipHorizontal: false,
@@ -95,18 +95,17 @@ describe("generated chart recognition corpus", () => {
     },
   );
 
-  it("preserves transparent support as a distinct calibrated cell", () => {
+  it("treats every occupied hard-pixel cell as a printable color", () => {
     const result = recognize(
       makeTransparentHardPixelChart(),
       "hard-pixel",
       2,
       3,
       0,
-      2,
     );
 
     expect(result.cells[0]).toEqual({ kind: "empty" });
-    expect(result.cells[2]).toEqual({ kind: "transparent-support" });
+    expect(result.cells[2]?.kind).toBe("color");
   });
 
   it("keeps white numbered beads and reports the generated watermark", () => {
@@ -118,7 +117,6 @@ describe("generated chart recognition corpus", () => {
       columns: 23,
       geometry: fixture.geometry,
       emptySelection: { kind: "sample", cellIndex: 0 },
-      transparentSupportSampleCellIndex: null,
       orientation: {
         rotation: 0,
         flipHorizontal: false,
@@ -159,7 +157,6 @@ describe("generated chart recognition corpus", () => {
       columns: suggestion.columns,
       geometry: suggestion.geometry,
       emptySelection: { kind: "sample", cellIndex: 0 },
-      transparentSupportSampleCellIndex: null,
       orientation: {
         rotation: 0,
         flipHorizontal: false,
@@ -187,6 +184,46 @@ describe("generated chart recognition corpus", () => {
     });
   });
 
+  it("finds a Chinese MARD code lattice without printed grid lines", () => {
+    const fixture = makeImplicitMardChart();
+
+    const suggestion = suggestGrid(fixture.raster, "numbered-grid");
+    expect(classifyPattern(fixture.raster).mode).toBe("numbered-grid");
+    expect(suggestion).toMatchObject({
+      rows: 11,
+      columns: 9,
+      geometry: fixture.expectedGeometry,
+      validSquareGrid: true,
+    });
+  });
+
+  it("uses the fundamental cell pitch after a MARD chart is resized", () => {
+    const fixture = makeImplicitMardChart(17, 13);
+    const source = resizeRasterNearest(fixture.raster, 0.77);
+
+    const suggestion = suggestGrid(source, "numbered-grid");
+    expect(suggestion).toMatchObject({
+      rows: 17,
+      columns: 13,
+      validSquareGrid: true,
+    });
+    expect(suggestion.geometry.cellWidth).toBeCloseTo(15.4, 0);
+    expect(suggestion.geometry.cellHeight).toBeCloseTo(15.4, 0);
+  });
+
+  it("uses coordinate axes instead of shrinking to sparse artwork bounds", () => {
+    const fixture = makeImplicitMardChart(42, 34, true);
+
+    const suggestion = suggestGrid(fixture.raster, "numbered-grid");
+
+    expect(suggestion).toMatchObject({
+      rows: 42,
+      columns: 34,
+      geometry: fixture.expectedGeometry,
+      validSquareGrid: true,
+    });
+  });
+
   it("flags a controlled JPEG-like near tie for manual review", () => {
     const result = recognize(
       makeNearTieHardPixelChart(),
@@ -209,6 +246,12 @@ describe("generated chart recognition corpus", () => {
     const fixture = makeTwoPatternCanvas();
     const first = cropRaster(fixture.raster, fixture.firstCrop);
     const second = cropRaster(fixture.raster, fixture.secondCrop);
+
+    expect(classifyPattern(fixture.raster)).toMatchObject({
+      requiresCrop: true,
+    });
+    expect(classifyPattern(first).requiresCrop).not.toBe(true);
+    expect(classifyPattern(second).requiresCrop).not.toBe(true);
 
     expect(suggestGrid(first, "hard-pixel")).toMatchObject({
       rows: 3,

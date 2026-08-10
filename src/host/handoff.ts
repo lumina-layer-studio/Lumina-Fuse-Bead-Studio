@@ -1,11 +1,16 @@
-import type { WorkshopImageHandoff } from "@lumina/workshop-sdk";
+import type {
+  WorkshopClient,
+  WorkshopImageHandoff,
+} from "@lumina/workshop-sdk";
 
 import {
   calculatePhysicalSize,
   createBeadRecipeSource,
   validateBeadProject,
 } from "../domain/project";
+import { estimateBeadThicknessMm } from "../domain/beadThickness";
 import type { BeadRenderResult } from "../domain/renderer";
+import { encodeBeadProjectSvg } from "../domain/svgRenderer";
 import {
   BEAD_MODULE_ID,
   BEAD_MODULE_VERSION,
@@ -16,9 +21,21 @@ import type { BeadImageCodec } from "./imageCodec";
 const MAX_HANDOFF_PNG_BYTES = 64 * 1024 * 1024;
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const;
 
+interface BeadWorkshopImageBase
+  extends Omit<WorkshopImageHandoff, "pngBytes"> {
+  recommendedTotalThicknessMm: number;
+}
+
 export interface PreparedBeadHandoff {
-  base: Omit<WorkshopImageHandoff, "pngBytes">;
+  base: BeadWorkshopImageBase;
   pngBytes: ArrayBuffer;
+  svgBytes: ArrayBuffer;
+}
+
+export interface BeadWorkshopImageHandoff
+  extends WorkshopImageHandoff {
+  svgBytes: ArrayBuffer;
+  recommendedTotalThicknessMm: number;
 }
 
 export class BeadHandoffError extends Error {
@@ -82,6 +99,16 @@ export async function prepareBeadHandoff(
   assertRenderMatchesProject(project, raster);
   const pngBytes = await imageCodec.encodePng(raster);
   assertPng(pngBytes);
+  const svgBytes = encodeBeadProjectSvg(project);
+  if (
+    svgBytes.byteLength === 0 ||
+    pngBytes.byteLength + svgBytes.byteLength > MAX_HANDOFF_PNG_BYTES
+  ) {
+    throw new BeadHandoffError(
+      "handoff-binary-size-invalid",
+      "The combined bead SVG and PNG fallback exceed 64 MiB.",
+    );
+  }
   const size = calculatePhysicalSize(project, project.beadPitchMm);
   const recipeSource = {
     ...createBeadRecipeSource(project),
@@ -97,6 +124,10 @@ export async function prepareBeadHandoff(
       pixelHeight: raster.height,
       recommendedWidthMm: size.widthMm,
       recommendedHeightMm: size.heightMm,
+      recommendedTotalThicknessMm: estimateBeadThicknessMm(
+        project.compression,
+        project.beadPitchMm,
+      ),
       preserveCanvasBounds: true,
       layout: {
         kind: "square-grid",
@@ -108,14 +139,52 @@ export async function prepareBeadHandoff(
       recipeSource: structuredClone(recipeSource),
     },
     pngBytes: pngBytes.slice(0),
+    svgBytes: svgBytes.slice(0),
   };
 }
 
 export function toWorkshopImageHandoff(
   prepared: PreparedBeadHandoff,
-): WorkshopImageHandoff {
+): BeadWorkshopImageHandoff {
   return {
     ...prepared.base,
     pngBytes: prepared.pngBytes.slice(0),
+    svgBytes: prepared.svgBytes.slice(0),
   };
+}
+
+function toLegacyWorkshopImageHandoff(
+  prepared: PreparedBeadHandoff,
+): WorkshopImageHandoff {
+  const { recommendedTotalThicknessMm: _thickness, ...legacyBase } =
+    prepared.base;
+  return {
+    ...legacyBase,
+    pngBytes: prepared.pngBytes.slice(0),
+  };
+}
+
+function isLegacyPayloadRejection(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "rpc-payload-invalid"
+  );
+}
+
+export async function handoffPreparedBeadImage(
+  client: Pick<WorkshopClient, "handoff">,
+  prepared: PreparedBeadHandoff,
+): Promise<{ status: "needs-confirmation" | "completed" }> {
+  try {
+    return await client.handoff.image(
+      toWorkshopImageHandoff(prepared),
+    );
+  } catch (error) {
+    if (!isLegacyPayloadRejection(error)) throw error;
+    return client.handoff.image(
+      toLegacyWorkshopImageHandoff(prepared),
+    );
+  }
 }

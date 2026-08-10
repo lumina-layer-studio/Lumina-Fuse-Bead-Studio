@@ -6,8 +6,8 @@ import type {
   BeadEditorState,
   BeadEditorTool,
 } from "../domain/editorReducer";
+import { estimateBeadThicknessMm } from "../domain/beadThickness";
 import { calculatePhysicalSize } from "../domain/project";
-import type { BeadRenderResult } from "../domain/renderer";
 import type {
   BeadPrintMapping,
   Raster,
@@ -31,8 +31,6 @@ type EditorView = "original" | "matrix" | "pressure";
 
 interface BeadEditorStepProps {
   state: BeadEditorState;
-  renderResult: BeadRenderResult | null;
-  renderBusy: boolean;
   sourceRaster: Raster | null;
   translate(key: string): string;
   dispatch(action: BeadEditorAction): void;
@@ -76,10 +74,60 @@ function formatMillimeters(value: number): string {
   return Number(value.toFixed(3)).toString();
 }
 
+function EditorToolIcon({ tool }: { tool: BeadEditorTool }) {
+  const commonProps = {
+    "aria-hidden": true,
+    className: "editor-tool-button__icon",
+    fill: "none",
+    stroke: "currentColor",
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    strokeWidth: 1.8,
+    viewBox: "0 0 24 24",
+  };
+
+  if (tool === "paint") {
+    return (
+      <svg {...commonProps}>
+        <path d="m4 20 4.2-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" />
+        <path d="m13.8 7.2 3 3" />
+      </svg>
+    );
+  }
+  if (tool === "erase") {
+    return (
+      <svg {...commonProps}>
+        <path d="m5 15.5 7.8-7.8a2 2 0 0 1 2.8 0l2.7 2.7a2 2 0 0 1 0 2.8L12.5 19H8.4L5 15.5Z" />
+        <path d="m10.5 10 5.5 5.5M12.5 19H20" />
+      </svg>
+    );
+  }
+  if (tool === "eraseFill") {
+    return (
+      <svg {...commonProps}>
+        <path d="M5 7h5v5H5zM14 7h5v5h-5zM5 16h5M14 16h5" />
+        <path d="M6.5 19h11" />
+      </svg>
+    );
+  }
+  if (tool === "eyedropper") {
+    return (
+      <svg {...commonProps}>
+        <path d="m14.5 5.5 4 4M7 17l8.8-8.8M5 19l2-2 3 3-2 2H5v-3Z" />
+        <path d="m13.5 5.5 1.2-1.2a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8l-1.2 1.2" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...commonProps}>
+      <path d="m4.5 12 7.3-7.3 7.5 7.5-7.3 7.3L4.5 12Z" />
+      <path d="m8.5 8.5 7 7M4 20h16" />
+    </svg>
+  );
+}
+
 export function BeadEditorStep({
   state,
-  renderResult,
-  renderBusy,
   sourceRaster,
   translate: t,
   dispatch,
@@ -112,6 +160,10 @@ export function BeadEditorStep({
     state.selectedIssueIndex ?? -1,
   );
   const size = calculatePhysicalSize(project, project.beadPitchMm);
+  const estimatedThicknessMm = estimateBeadThicknessMm(
+    project.compression,
+    project.beadPitchMm,
+  );
   const hasColoredBeads = useMemo(
     () => project.cells.some((cell) => cell.kind === "color"),
     [project.cells],
@@ -183,9 +235,9 @@ export function BeadEditorStep({
   const toolNames: BeadEditorTool[] = [
     "paint",
     "erase",
+    "eraseFill",
     "eyedropper",
     "fill",
-    "support",
   ];
 
   return (
@@ -335,79 +387,99 @@ export function BeadEditorStep({
             </div>
           ) : null}
 
-          <div className="control-grid">
-            {toolNames.map((tool) => (
+          <section className="editor-tool-section">
+            <p className="field-label">
+              {t("workshop.bead.toolsTitle")}
+            </p>
+            <div
+              className="editor-tool-grid"
+              role="toolbar"
+              aria-label={t("workshop.bead.toolsTitle")}
+            >
+              {toolNames.map((tool) => (
+                <button
+                  key={tool}
+                  type="button"
+                  aria-pressed={state.activeTool === tool}
+                  className="segmented-control editor-tool-button"
+                  title={t(`workshop.bead.toolHint.${tool}`)}
+                  onClick={() => dispatch({ type: "set-tool", tool })}
+                >
+                  <EditorToolIcon tool={tool} />
+                  <span>{t(`workshop.bead.tool.${tool}`)}</span>
+                </button>
+              ))}
+            </div>
+            <p className="editor-tool-hint" aria-live="polite">
+              {t(`workshop.bead.toolHint.${state.activeTool}`)}
+            </p>
+            <div className="editor-history-row">
               <button
-                key={tool}
                 type="button"
-                aria-pressed={state.activeTool === tool}
                 className="segmented-control"
-                onClick={() => dispatch({ type: "set-tool", tool })}
+                disabled={state.past.length === 0}
+                onClick={() => dispatch({ type: "undo" })}
               >
-                {t(`workshop.bead.tool.${tool}`)}
+                {t("workshop.bead.undo")}
               </button>
-            ))}
-          </div>
-
-          <div className="control-row">
-            <button
-              type="button"
-              className="segmented-control"
-              onClick={() => dispatch({ type: "undo" })}
-            >
-              {t("workshop.bead.undo")}
-            </button>
-            <button
-              type="button"
-              className="segmented-control"
-              onClick={() => dispatch({ type: "redo" })}
-            >
-              {t("workshop.bead.redo")}
-            </button>
-          </div>
-
-          <div className="palette-row">
-            {project.palette.map((color, index) => (
               <button
-                key={`${color.join("-")}-${index}`}
                 type="button"
-                aria-label={interpolate(
-                  t("workshop.bead.paletteColor"),
-                  { index: index + 1 },
-                )}
-                aria-pressed={state.activePaletteIndex === index}
-                className="palette-swatch"
-                style={{
-                  backgroundColor: `rgb(${color[0]} ${color[1]} ${color[2]})`,
-                }}
-                onClick={() =>
-                  dispatch({ type: "set-palette", paletteIndex: index })
-                }
-              />
-            ))}
-            <label className="color-input">
-              <span>{t("workshop.bead.customColor")}</span>
-              <input
-                type="color"
-                aria-label={t("workshop.bead.customColor")}
-                value={toHex(
-                  project.palette[state.activePaletteIndex] ??
-                    project.palette[0] ??
-                    ([0, 0, 0] as RgbColor),
-                )}
-                onChange={(event) => {
-                  const color = fromHex(event.target.value);
-                  if (color) {
-                    dispatch({
-                      type: "add-palette-color",
-                      color,
-                      updatedAt: new Date().toISOString(),
-                    });
+                className="segmented-control"
+                disabled={state.future.length === 0}
+                onClick={() => dispatch({ type: "redo" })}
+              >
+                {t("workshop.bead.redo")}
+              </button>
+            </div>
+          </section>
+
+          <section className="editor-palette-section">
+            <p className="field-label">
+              {t("workshop.bead.paletteTitle")}
+            </p>
+            <div className="palette-row">
+              {project.palette.map((color, index) => (
+                <button
+                  key={`${color.join("-")}-${index}`}
+                  type="button"
+                  aria-label={interpolate(
+                    t("workshop.bead.paletteColor"),
+                    { index: index + 1 },
+                  )}
+                  aria-pressed={state.activePaletteIndex === index}
+                  className="palette-swatch"
+                  style={{
+                    backgroundColor: `rgb(${color[0]} ${color[1]} ${color[2]})`,
+                  }}
+                  onClick={() =>
+                    dispatch({ type: "set-palette", paletteIndex: index })
                   }
-                }}
-              />
-            </label>
-          </div>
+                />
+              ))}
+              <label className="color-input">
+                <span>{t("workshop.bead.customColor")}</span>
+                <input
+                  type="color"
+                  aria-label={t("workshop.bead.customColor")}
+                  value={toHex(
+                    project.palette[state.activePaletteIndex] ??
+                      project.palette[0] ??
+                      ([0, 0, 0] as RgbColor),
+                  )}
+                  onChange={(event) => {
+                    const color = fromHex(event.target.value);
+                    if (color) {
+                      dispatch({
+                        type: "add-palette-color",
+                        color,
+                        updatedAt: new Date().toISOString(),
+                      });
+                    }
+                  }}
+                />
+              </label>
+            </div>
+          </section>
 
           <div>
             <p className="review-summary">
@@ -529,6 +601,11 @@ export function BeadEditorStep({
               height: formatMillimeters(size.heightMm),
             })}
           </p>
+          <p className="physical-size">
+            {interpolate(t("workshop.bead.estimatedThickness"), {
+              thickness: formatMillimeters(estimatedThicknessMm),
+            })}
+          </p>
 
           {onHandoff ? (
             <Button
@@ -572,12 +649,6 @@ export function BeadEditorStep({
             )}
           </div>
 
-          {renderBusy && view === "pressure" ? (
-            <StatusBanner>
-              {t("workshop.bead.rendering")}
-            </StatusBanner>
-          ) : null}
-
           <div className="canvas-stage">
             {view === "original" && sourceRaster && sourceGeometry ? (
               <BeadSourceCanvas
@@ -598,6 +669,10 @@ export function BeadEditorStep({
                 showGrid={showGrid}
                 selectedCellIndex={state.selectedCellIndex}
                 onPickCell={applyAt}
+                allowDrag={
+                  state.activeTool === "paint" ||
+                  state.activeTool === "erase"
+                }
                 ariaLabel={t("workshop.bead.matrixCanvas")}
               />
             )}

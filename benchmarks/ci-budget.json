@@ -4,5 +4,7 @@
   "mainThreadMaxSliceMs": 200,
   "peakTransferredBytes": 100000000,
   "releasedWorkerCount": 1,
-  "releasedBlobUrlCount": 1
+  "releasedBlobUrlCount": 1,
+  "svgPreview911Ms": 250,
+  "svgPreview3532Ms": 500
 }

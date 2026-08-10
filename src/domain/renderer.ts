@@ -112,7 +112,8 @@ function claimPixel(
   const offset = y * width + x;
   const score =
     (gridX - contour.center.x) ** 2 +
-    (gridY - contour.center.y) ** 2;
+    (gridY - contour.center.y) ** 2 -
+    contour.ownershipBias;
   if (
     score < ownerScores[offset] - SCORE_EPSILON ||
     (Math.abs(score - ownerScores[offset]) <= SCORE_EPSILON &&
@@ -216,7 +217,7 @@ function isOccupied(project: BeadProject, row: number, column: number): boolean 
     column >= 0 &&
     row < project.rows &&
     column < project.columns &&
-    project.cells[row * project.columns + column].kind !== "empty"
+    project.cells[row * project.columns + column].kind === "color"
   );
 }
 
@@ -232,7 +233,6 @@ function clearReliefs(
   if (compression === 100) return;
   const minimumVisibleRadius =
     Math.SQRT1_2 / pixelsPerCell + Number.EPSILON;
-  const pressure = compression / 100;
   const holeRadius = Math.max(
     geometry.holeRadius,
     minimumVisibleRadius,
@@ -249,7 +249,7 @@ function clearReliefs(
     );
   }
   const junctionRadius = Math.max(
-    0.075 * Math.pow(1 - pressure, 1.35),
+    geometry.junctionRadius,
     minimumVisibleRadius,
   );
   for (let row = 1; row < project.rows; row += 1) {
