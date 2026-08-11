@@ -33,6 +33,7 @@ export interface FastBeadPreviewModel {
   rows: number;
   columns: number;
   beadPitchMm: number;
+  pressure: number;
   outerRadiusMm: number;
   holeRadiusMm: number;
   contactReachMm: number;
@@ -93,6 +94,7 @@ export function buildFastBeadPreviewModel(
     rows: project.rows,
     columns: project.columns,
     beadPitchMm: pitchMm,
+    pressure: profile.pressure,
     outerRadiusMm,
     holeRadiusMm: profile.holeRadius * pitchMm,
     contactReachMm: profile.contactReach * pitchMm,

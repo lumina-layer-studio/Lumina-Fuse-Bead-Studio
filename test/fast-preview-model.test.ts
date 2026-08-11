@@ -73,6 +73,7 @@ describe("fast fused bead preview model", () => {
       profile.contactReach * project.beadPitchMm,
       8,
     );
+    expect(model.pressure).toBe(profile.pressure);
     expect(model.heightMm).toBe(
       estimateBeadThicknessMm(project.compression, project.beadPitchMm),
     );
