@@ -46,13 +46,13 @@ export interface BeadThreePreviewController {
    * Publishes the next browser-side project preview. Revisions must be
    * non-negative integers that increase strictly; duplicate or stale values
    * are ignored so one exact result can pair with only one fast revision.
-   * The optional method shape is transitional until all React callers migrate.
+   * React callers must publish a paired revision before scheduling exact work.
    *
    * 发布下一份浏览器端项目预览。修订号必须是严格递增的非负整数；重复或
-   * 过期值会被忽略，确保一份精确结果只与一份快速预览配对。方法暂时可选，
-   * 仅用于 React 调用方迁移期间的兼容。
+   * 过期值会被忽略，确保一份精确结果只与一份快速预览配对。React 调用方
+   * 必须先发布配对修订号，再调度精确模型。
    */
-  previewProject?(project: BeadProject, revision: number): void;
+  previewProject(project: BeadProject, revision: number): void;
 
   /**
    * Commits exact fused geometry. A supplied revision must match the latest

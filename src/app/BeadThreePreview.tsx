@@ -52,6 +52,16 @@ interface PendingSurfaceRender {
   ready: boolean;
 }
 
+interface PublishedProjectRevision {
+  project: BeadProject;
+  revision: number;
+}
+
+interface ExactPreviewState {
+  model: PhysicalPreviewModel;
+  revision: number;
+}
+
 type ThreeInteractionMode = "edit" | "view";
 
 interface ActiveEditGesture {
@@ -92,7 +102,9 @@ export function BeadThreePreview({
   translate = defaultTranslate,
 }: BeadThreePreviewProps) {
   const [unavailable, setUnavailable] = useState(false);
-  const [model, setModel] = useState<PhysicalPreviewModel | null>(null);
+  const [exactState, setExactState] = useState<ExactPreviewState | null>(
+    null,
+  );
   const [interactionMode, setInteractionMode] =
     useState<ThreeInteractionMode>("edit");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -110,6 +122,7 @@ export function BeadThreePreview({
   );
   const reportUnavailableRef = useRef<() => void>(() => undefined);
   const surfaceRequestVersionRef = useRef(0);
+  const publishedProjectRef = useRef<PublishedProjectRevision | null>(null);
   const pendingSurfaceRenderRef = useRef<PendingSurfaceRender | null>(null);
   const surfaceRenderInFlightRef = useRef(false);
   const startPendingSurfaceRenderRef = useRef<() => void>(
@@ -247,6 +260,24 @@ export function BeadThreePreview({
     }
   }, [supportsThreePreview]);
 
+  useLayoutEffect(() => {
+    if (unavailable || !supportsThreePreview) return;
+    const controller = controllerRef.current;
+    if (controller === null) return;
+
+    const revision = surfaceRequestVersionRef.current + 1;
+    surfaceRequestVersionRef.current = revision;
+    const publishedProject = { project, revision };
+    publishedProjectRef.current = publishedProject;
+    try {
+      controller.previewProject(project, revision);
+    } catch {
+      if (publishedProjectRef.current === publishedProject) {
+        reportUnavailableRef.current();
+      }
+    }
+  }, [project, supportsThreePreview, unavailable]);
+
   useEffect(() => {
     if (
       unavailable ||
@@ -301,13 +332,13 @@ export function BeadThreePreview({
           ) {
             return;
           }
-          setModel(
-            buildPhysicalPreviewModel(
+          setExactState({
+            model: buildPhysicalPreviewModel(
               pendingRender.project,
               surfacePaths,
             ),
-          );
-          setRendering(false);
+            revision: pendingRender.requestVersion,
+          });
         })
         .catch(() => {
           if (
@@ -327,6 +358,7 @@ export function BeadThreePreview({
 
     return () => {
       surfaceRequestVersionRef.current += 1;
+      publishedProjectRef.current = null;
       pendingSurfaceRenderRef.current = null;
       surfaceRenderInFlightRef.current = false;
       if (
@@ -351,8 +383,9 @@ export function BeadThreePreview({
       return undefined;
     }
 
-    const requestVersion = surfaceRequestVersionRef.current + 1;
-    surfaceRequestVersionRef.current = requestVersion;
+    const publishedProject = publishedProjectRef.current;
+    if (publishedProject?.project !== project) return undefined;
+    const requestVersion = publishedProject.revision;
     const pendingRender: PendingSurfaceRender = {
       project,
       requestVersion,
@@ -375,13 +408,29 @@ export function BeadThreePreview({
   }, [project, supportsThreePreview, unavailable]);
 
   useEffect(() => {
-    if (unavailable || model === null) return;
-    try {
-      controllerRef.current?.update(model);
-    } catch {
-      reportUnavailableRef.current();
+    if (
+      unavailable ||
+      exactState === null ||
+      exactState.revision !== surfaceRequestVersionRef.current
+    ) {
+      return;
     }
-  }, [model, unavailable]);
+    const controller = controllerRef.current;
+    if (controller === null) return;
+    try {
+      controller.update(exactState.model, exactState.revision);
+      if (
+        controllerRef.current === controller &&
+        exactState.revision === surfaceRequestVersionRef.current
+      ) {
+        setRendering(false);
+      }
+    } catch {
+      if (exactState.revision === surfaceRequestVersionRef.current) {
+        reportUnavailableRef.current();
+      }
+    }
+  }, [exactState, unavailable]);
 
   useEffect(() => {
     if (unavailable || !supportsThreePreview) return;

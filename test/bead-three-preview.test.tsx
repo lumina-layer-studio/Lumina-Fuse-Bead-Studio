@@ -6,6 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -24,10 +25,12 @@ import type { BeadProject } from "../src/domain/types";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 class ResizeObserverStub implements ResizeObserver {
@@ -68,6 +71,7 @@ function makeProject() {
 
 function makeController(): BeadThreePreviewController {
   return {
+    previewProject: vi.fn(),
     update: vi.fn(),
     pickCellAt: vi.fn(() => null),
     setSelectedCell: vi.fn(),
@@ -79,6 +83,47 @@ function makeController(): BeadThreePreviewController {
     resetView: vi.fn(),
     dispose: vi.fn(),
   };
+}
+
+type StatefulDragTool = "paint" | "erase";
+
+interface StatefulDragPreviewProps {
+  initialProject: BeadProject;
+  tool: StatefulDragTool;
+  controller: BeadThreePreviewController;
+  renderer: ReturnType<typeof makeSurfaceRenderer>;
+  onEdit: (cellIndex: number) => void;
+}
+
+function StatefulDragPreview({
+  initialProject,
+  tool,
+  controller,
+  renderer,
+  onEdit,
+}: StatefulDragPreviewProps) {
+  const [project, setProject] = useState(initialProject);
+  const handlePickCell = (cellIndex: number) => {
+    onEdit(cellIndex);
+    setProject((currentProject) => {
+      const cells = [...currentProject.cells];
+      cells[cellIndex] = tool === "paint"
+        ? { kind: "color", paletteIndex: 0 }
+        : { kind: "empty" };
+      return { ...currentProject, cells };
+    });
+  };
+
+  return (
+    <BeadThreePreview
+      project={project}
+      ariaLabel={`${tool} stateful 3D preview`}
+      createController={() => controller}
+      createSurfaceRenderer={() => renderer}
+      onPickCell={handlePickCell}
+      allowDrag
+    />
+  );
 }
 
 function makeSurfacePaths(fill = "rgb(230,40,50)"): BeadFusionSvgPath[] {
@@ -228,7 +273,7 @@ describe("BeadThreePreview", () => {
     expect(createSurfaceRenderer).not.toHaveBeenCalled();
   });
 
-  it("waits for the asynchronous fusion surface before updating the 3D controller", async () => {
+  it("publishes the fast project before committing the asynchronous exact surface", async () => {
     vi.useFakeTimers();
     const project = makeProject();
     const controller = makeController();
@@ -245,6 +290,7 @@ describe("BeadThreePreview", () => {
 
     const canvas = screen.getByRole("img", { name: "异步三维预览" });
     expect(canvas).toHaveAttribute("aria-busy", "true");
+    expect(controller.previewProject).toHaveBeenCalledWith(project, 1);
     expect(renderer.render).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -262,6 +308,7 @@ describe("BeadThreePreview", () => {
     expect(controller.update).toHaveBeenCalledTimes(1);
     expect(controller.update).toHaveBeenLastCalledWith(
       buildPhysicalPreviewModel(project, surfacePaths),
+      1,
     );
     expect(canvas).toHaveAttribute("aria-busy", "false");
   });
@@ -333,6 +380,10 @@ describe("BeadThreePreview", () => {
         allowDrag
         translate={translateThreePreviewControls}
       />,
+    );
+    expect(controller.previewProject).toHaveBeenLastCalledWith(
+      updatedProject,
+      2,
     );
     expect(
       screen.getByRole("status", { name: "Updating 3D preview…" }),
@@ -414,12 +465,77 @@ describe("BeadThreePreview", () => {
         latestProject,
         latestSurfacePaths,
       ),
+      2,
     );
 
     expect(controller.update).toHaveBeenCalledTimes(1);
 
     view.unmount();
     expect(renderer.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a rejected superseded exact result and still commits the latest revision", async () => {
+    vi.useFakeTimers();
+    const firstProject = makeProject();
+    const latestProject = {
+      ...firstProject,
+      projectId: "three-preview-after-stale-rejection",
+      compression: 76,
+    };
+    const controller = makeController();
+    const firstPending = deferred<BeadFusionSvgPath[]>();
+    const latestPending = deferred<BeadFusionSvgPath[]>();
+    const renderer = makeSurfaceRenderer(firstPending.promise);
+    renderer.render
+      .mockReturnValueOnce(firstPending.promise)
+      .mockReturnValueOnce(latestPending.promise);
+    const view = render(
+      <BeadThreePreview
+        project={firstProject}
+        ariaLabel="过期失败后的最新三维预览"
+        createController={() => controller}
+        createSurfaceRenderer={() => renderer}
+      />,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120);
+    });
+    expect(renderer.render).toHaveBeenLastCalledWith(firstProject);
+
+    view.rerender(
+      <BeadThreePreview
+        project={latestProject}
+        ariaLabel="过期失败后的最新三维预览"
+        createController={() => controller}
+        createSurfaceRenderer={() => renderer}
+      />,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120);
+      firstPending.reject(new Error("stale exact failure"));
+      await firstPending.promise.catch(() => undefined);
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByRole("img", { name: "过期失败后的最新三维预览" }),
+    ).toHaveProperty("tagName", "CANVAS");
+    expect(controller.dispose).not.toHaveBeenCalled();
+    expect(controller.update).not.toHaveBeenCalled();
+    expect(renderer.render).toHaveBeenCalledTimes(2);
+    expect(renderer.render).toHaveBeenLastCalledWith(latestProject);
+
+    const latestSurfacePaths = makeSurfacePaths("rgb(20,120,210)");
+    await act(async () => {
+      latestPending.resolve(latestSurfacePaths);
+      await latestPending.promise;
+    });
+    expect(controller.update).toHaveBeenCalledTimes(1);
+    expect(controller.update).toHaveBeenLastCalledWith(
+      buildPhysicalPreviewModel(latestProject, latestSurfacePaths),
+      2,
+    );
   });
 
   it("keeps one surface render in flight and starts only the latest ready project after it settles", async () => {
@@ -485,6 +601,15 @@ describe("BeadThreePreview", () => {
         createSurfaceRenderer={() => renderer}
       />,
     );
+    expect(
+      vi.mocked(controller.previewProject).mock.calls.map(
+        ([publishedProject, revision]) => [publishedProject, revision],
+      ),
+    ).toEqual([
+      [firstProject, 1],
+      [intermediateProject, 2],
+      [latestProject, 3],
+    ]);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(120);
     });
@@ -508,6 +633,7 @@ describe("BeadThreePreview", () => {
     expect(controller.update).toHaveBeenCalledTimes(1);
     expect(controller.update).toHaveBeenLastCalledWith(
       buildPhysicalPreviewModel(latestProject, latestSurfacePaths),
+      3,
     );
   });
 
@@ -570,7 +696,7 @@ describe("BeadThreePreview", () => {
     expect(controller.update).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps one canvas and old geometry until the latest model is ready", async () => {
+  it("keeps one canvas while the latest fast project is visible", async () => {
     vi.useFakeTimers();
     const project = makeProject();
     const controller = makeController();
@@ -603,6 +729,7 @@ describe("BeadThreePreview", () => {
     expect(controller.update).toHaveBeenCalledTimes(1);
     expect(controller.update).toHaveBeenLastCalledWith(
       buildPhysicalPreviewModel(project, initialSurfacePaths),
+      1,
     );
 
     const updatedProject = {
@@ -627,6 +754,10 @@ describe("BeadThreePreview", () => {
     expect(createSurfaceRenderer).toHaveBeenCalledTimes(1);
     expect(renderer.dispose).not.toHaveBeenCalled();
     expect(screen.getByRole("img", { name: "全局三维预览" })).toBe(canvas);
+    expect(controller.previewProject).toHaveBeenLastCalledWith(
+      updatedProject,
+      2,
+    );
     expect(controller.update).toHaveBeenCalledTimes(1);
 
     await act(async () => {
@@ -644,6 +775,7 @@ describe("BeadThreePreview", () => {
         updatedProject,
         updatedSurfacePaths,
       ),
+      2,
     );
     expect(screen.getByRole("img", { name: "全局三维预览" })).toBe(canvas);
 
@@ -762,6 +894,7 @@ describe("BeadThreePreview", () => {
   });
 
   it("disposes its controller and pending surface renderer exactly once on unmount", async () => {
+    vi.useFakeTimers();
     const controller = makeController();
     const pending = deferred<BeadFusionSvgPath[]>();
     const renderer = makeSurfaceRenderer(pending.promise);
@@ -773,6 +906,11 @@ describe("BeadThreePreview", () => {
         createSurfaceRenderer={() => renderer}
       />,
     );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120);
+    });
+    expect(renderer.render).toHaveBeenCalledTimes(1);
 
     view.unmount();
 
@@ -951,6 +1089,125 @@ describe("BeadThreePreview", () => {
     ).toHaveProperty("tagName", "svg");
     expect(controller.dispose).toHaveBeenCalledTimes(1);
   });
+
+  it.each<StatefulDragTool>(["paint", "erase"])(
+    "publishes %s strokes before pointer up or exact fusion catches up",
+    async (tool) => {
+      vi.useFakeTimers();
+      const initialProject = createBeadProject({
+        projectId: `stateful-${tool}-preview`,
+        moduleVersion: "1.0.8",
+        now: "2026-08-12T00:00:00.000Z",
+        rows: 1,
+        columns: 3,
+        palette: [[230, 40, 50]],
+        cells: Array.from({ length: 3 }, () =>
+          tool === "paint"
+            ? { kind: "empty" as const }
+            : { kind: "color" as const, paletteIndex: 0 },
+        ),
+        compression: 50,
+        irregularity: 20,
+      });
+      const controller = makeController();
+      vi.mocked(controller.pickCellAt).mockImplementation((clientX) =>
+        clientX < 20 ? 0 : 1,
+      );
+      const renderer = makeSurfaceRenderer(
+        Promise.resolve(makeSurfacePaths()),
+      );
+      const onEdit = vi.fn();
+      render(
+        <StatefulDragPreview
+          initialProject={initialProject}
+          tool={tool}
+          controller={controller}
+          renderer={renderer}
+          onEdit={onEdit}
+        />,
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120);
+      });
+      expect(renderer.render).toHaveBeenCalledTimes(1);
+      expect(controller.update).toHaveBeenCalledTimes(1);
+      expect(controller.previewProject).toHaveBeenCalledTimes(1);
+      expect(controller.previewProject).toHaveBeenLastCalledWith(
+        initialProject,
+        1,
+      );
+
+      const canvas = screen.getByRole("img", {
+        name: `${tool} stateful 3D preview`,
+      }) as HTMLCanvasElement;
+      installPointerCaptureSpies(canvas);
+      dispatchPointer(canvas, "pointerdown", {
+        button: 0,
+        buttons: 1,
+        clientX: 10,
+        clientY: 10,
+        pointerId: 41,
+        pointerType: "mouse",
+        isPrimary: true,
+      });
+
+      const firstExpectedCells = [...initialProject.cells];
+      firstExpectedCells[0] = tool === "paint"
+        ? { kind: "color", paletteIndex: 0 }
+        : { kind: "empty" };
+      expect(controller.previewProject).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cells: firstExpectedCells }),
+        2,
+      );
+      expect(renderer.render).toHaveBeenCalledTimes(1);
+      expect(controller.update).toHaveBeenCalledTimes(1);
+
+      dispatchPointer(canvas, "pointermove", {
+        buttons: 1,
+        clientX: 11,
+        clientY: 10,
+        pointerId: 41,
+        pointerType: "mouse",
+        isPrimary: true,
+      });
+      expect(onEdit).toHaveBeenCalledTimes(1);
+      expect(controller.previewProject).toHaveBeenCalledTimes(2);
+
+      dispatchPointer(canvas, "pointermove", {
+        buttons: 1,
+        clientX: 30,
+        clientY: 10,
+        pointerId: 41,
+        pointerType: "mouse",
+        isPrimary: true,
+      });
+      const latestExpectedCells = [...firstExpectedCells];
+      latestExpectedCells[1] = tool === "paint"
+        ? { kind: "color", paletteIndex: 0 }
+        : { kind: "empty" };
+      expect(controller.previewProject).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cells: latestExpectedCells }),
+        3,
+      );
+      expect(onEdit).toHaveBeenCalledTimes(2);
+      expect(renderer.render).toHaveBeenCalledTimes(1);
+      expect(controller.update).toHaveBeenCalledTimes(1);
+
+      dispatchPointer(canvas, "pointerup", {
+        button: 0,
+        clientX: 30,
+        clientY: 10,
+        pointerId: 41,
+        pointerType: "mouse",
+        isPrimary: true,
+      });
+      expect(onEdit).toHaveBeenCalledTimes(2);
+      expect(controller.previewProject).toHaveBeenCalledTimes(3);
+      expect(renderer.render).toHaveBeenCalledTimes(1);
+      expect(controller.update).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("edits drag-capable tools on pointer down and only once per crossed cell", () => {
     const controller = makeController();
