@@ -65,6 +65,12 @@ function fastMesh(scene: Scene): InstancedMesh {
   return mesh as InstancedMesh;
 }
 
+function outgoingMesh(scene: Scene): InstancedMesh {
+  const mesh = scene.getObjectByName("bead-preview-fast-outgoing");
+  expect(mesh).toBeInstanceOf(InstancedMesh);
+  return mesh as InstancedMesh;
+}
+
 function readTransform(mesh: InstancedMesh, cellIndex: number) {
   const matrix = new Matrix4();
   const position = new Vector3();
@@ -112,6 +118,13 @@ function expectHidden(mesh: InstancedMesh, cellIndex: number): void {
   expect(elements[10]).toBe(0);
 }
 
+function expectVisible(mesh: InstancedMesh, cellIndex: number): void {
+  const { scale } = readTransform(mesh, cellIndex);
+  expect(scale.x).toBeGreaterThan(0);
+  expect(scale.y).toBeGreaterThan(0);
+  expect(scale.z).toBeGreaterThan(0);
+}
+
 function diagonalOuterRatio(mesh: InstancedMesh, radiusMm: number): number {
   const positions = mesh.geometry.getAttribute("position");
   let diagonalExtent = 0;
@@ -124,7 +137,7 @@ function diagonalOuterRatio(mesh: InstancedMesh, radiusMm: number): number {
 }
 
 describe("persistent fast bead preview layer", () => {
-  it("uses one named physical instanced mesh with stable cell slots", () => {
+  it("uses stable main and outgoing instance meshes across edits", () => {
     const scene = new Scene();
     const layer = createBeadFastPreviewLayer(scene, false);
     const initial = makeModel([EMPTY, RED]);
@@ -134,7 +147,11 @@ describe("persistent fast bead preview layer", () => {
 
     layer.update(initial, 1, 0);
     const mesh = fastMesh(scene);
+    const outgoing = outgoingMesh(scene);
     expect(mesh.count).toBe(2);
+    expect(outgoing.count).toBe(2);
+    expect(outgoing.geometry).toBe(mesh.geometry);
+    expect(outgoing.material).toBe(mesh.material);
     expect(mesh.geometry).toBeInstanceOf(ExtrudeGeometry);
     expect(mesh.material).toBeInstanceOf(MeshPhysicalMaterial);
     expect(mesh.material).toMatchObject({
@@ -152,7 +169,8 @@ describe("persistent fast bead preview layer", () => {
     layer.advance(10 + BEAD_PLACEMENT_ANIMATION_MS);
     layer.update(recolored, 3, 400);
     expect(fastMesh(scene)).toBe(mesh);
-    expect(layer.hasActiveAnimations()).toBe(false);
+    expect(outgoingMesh(scene)).toBe(outgoing);
+    expect(layer.hasActiveAnimations()).toBe(true);
     expectColorClose(
       readColor(mesh, 0),
       new Color().setStyle("rgb(239, 56, 72)"),
@@ -160,8 +178,10 @@ describe("persistent fast bead preview layer", () => {
 
     layer.update(erased, 4, 410);
     expect(fastMesh(scene)).toBe(mesh);
+    expect(outgoingMesh(scene)).toBe(outgoing);
     expectHidden(mesh, 0);
-    expect(layer.hasActiveAnimations()).toBe(false);
+    expectVisible(outgoing, 0);
+    expect(layer.hasActiveAnimations()).toBe(true);
     expect(layer.revision).toBe(4);
   });
 
@@ -346,37 +366,60 @@ describe("persistent fast bead preview layer", () => {
     expectMatrixClose(readTransform(fastMesh(scene), 1).matrix, finalMatrix(model, 1));
   });
 
-  it("recolors at the final pose without replaying placement", () => {
+  it("lifts the old color while the replacement bead starts placing", () => {
     const scene = new Scene();
     const layer = createBeadFastPreviewLayer(scene, false);
     const red = makeModel([RED]);
     const blue = makeModel([BLUE]);
+    const startedAt = 100;
 
     layer.update(red, 1, 0);
-    const mesh = fastMesh(scene);
-    layer.update(blue, 2, 10);
+    layer.update(blue, 2, startedAt);
 
-    expect(layer.hasActiveAnimations()).toBe(false);
-    expectMatrixClose(readTransform(mesh, 0).matrix, finalMatrix(blue, 0));
+    const mesh = fastMesh(scene);
+    const outgoing = outgoingMesh(scene);
+    expectVisible(mesh, 0);
+    expectVisible(outgoing, 0);
     expectColorClose(
       readColor(mesh, 0),
       new Color().setStyle("rgb(40, 114, 224)"),
     );
+    expectColorClose(
+      readColor(outgoing, 0),
+      new Color().setStyle("rgb(239, 56, 72)"),
+    );
+    expect(layer.hasActiveAnimations()).toBe(true);
+
+    layer.advance(startedAt + 220);
+    expectHidden(outgoing, 0);
+    expect(layer.hasActiveAnimations()).toBe(true);
+
+    layer.advance(startedAt + BEAD_PLACEMENT_ANIMATION_MS);
+    expectMatrixClose(readTransform(mesh, 0).matrix, finalMatrix(blue, 0));
+    expect(layer.hasActiveAnimations()).toBe(false);
   });
 
-  it("erases immediately even while a bead is still falling", () => {
+  it("lifts an erased bead from its current animated pose", () => {
     const scene = new Scene();
     const layer = createBeadFastPreviewLayer(scene, false);
 
     layer.update(makeModel([EMPTY]), 1, 0);
     layer.update(makeModel([RED]), 2, 10);
+    layer.advance(90);
+    const current = readTransform(fastMesh(scene), 0);
     expect(layer.hasActiveAnimations()).toBe(true);
 
-    layer.update(makeModel([EMPTY]), 3, 20);
+    layer.update(makeModel([EMPTY]), 3, 90);
 
     expectHidden(fastMesh(scene), 0);
+    const outgoing = readTransform(outgoingMesh(scene), 0);
+    expect(outgoing.position.y).toBeCloseTo(current.position.y, 6);
+    expect(outgoing.scale.x).toBeCloseTo(current.scale.x, 6);
+    expect(layer.hasActiveAnimations()).toBe(true);
+
+    layer.advance(90 + 220);
+    expectHidden(outgoingMesh(scene), 0);
     expect(layer.hasActiveAnimations()).toBe(false);
-    expect(layer.advance(1_000)).toBe(false);
   });
 
   it("writes the final pose immediately when reduced motion is enabled", () => {
@@ -388,6 +431,7 @@ describe("persistent fast bead preview layer", () => {
     layer.update(painted, 2, 10);
 
     expect(layer.hasActiveAnimations()).toBe(false);
+    expectHidden(outgoingMesh(scene), 0);
     expect(layer.advance(20)).toBe(false);
     expectMatrixClose(
       readTransform(fastMesh(scene), 0).matrix,
@@ -400,12 +444,16 @@ describe("persistent fast bead preview layer", () => {
     const layer = createBeadFastPreviewLayer(scene, false);
     layer.update(makeModel([RED]), 1, 0);
     const mesh = fastMesh(scene);
+    const outgoing = outgoingMesh(scene);
 
     layer.setVisible(false);
     expect(mesh.visible).toBe(false);
+    expect(outgoing.visible).toBe(false);
     layer.setVisible(true);
     expect(mesh.visible).toBe(true);
+    expect(outgoing.visible).toBe(true);
     expect(fastMesh(scene)).toBe(mesh);
+    expect(outgoingMesh(scene)).toBe(outgoing);
   });
 
   it("disposes mesh geometry and material exactly once", () => {
@@ -413,17 +461,21 @@ describe("persistent fast bead preview layer", () => {
     const layer = createBeadFastPreviewLayer(scene, false);
     layer.update(makeModel([RED]), 1, 0);
     const mesh = fastMesh(scene);
+    const outgoing = outgoingMesh(scene);
     const geometryDispose = vi.spyOn(mesh.geometry, "dispose");
     const material = mesh.material as MeshPhysicalMaterial;
     const materialDispose = vi.spyOn(material, "dispose");
     const meshDispose = vi.spyOn(mesh, "dispose");
+    const outgoingDispose = vi.spyOn(outgoing, "dispose");
 
     layer.dispose();
     layer.dispose();
 
     expect(scene.getObjectByName("bead-preview-fast-beads")).toBeUndefined();
+    expect(scene.getObjectByName("bead-preview-fast-outgoing")).toBeUndefined();
     expect(geometryDispose).toHaveBeenCalledTimes(1);
     expect(materialDispose).toHaveBeenCalledTimes(1);
     expect(meshDispose).toHaveBeenCalledTimes(1);
+    expect(outgoingDispose).toHaveBeenCalledTimes(1);
   });
 });

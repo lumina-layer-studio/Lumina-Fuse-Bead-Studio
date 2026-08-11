@@ -1159,6 +1159,27 @@ describe("beadThreePreviewController resource lifecycle", () => {
     controller.dispose();
   });
 
+  it("waits for erase exit motion before exact geometry takes over", () => {
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    previewProject(controller, makeProject([RED_CELL]), 1);
+    flushFrame(0);
+    previewProject(controller, makeProject([EMPTY_CELL]), 2);
+    flushFrame(10);
+    controller.update(makeGridModel(1, 1), 2);
+    const parse = vi.spyOn(SVGLoader.prototype, "parse");
+
+    flushFrame(10 + 219);
+    expect(parse).not.toHaveBeenCalled();
+    flushFrame(10 + 220);
+    expect(parse).not.toHaveBeenCalled();
+    flushFrame(10 + 221);
+    expect(parse).toHaveBeenCalledTimes(1);
+    controller.dispose();
+  });
+
   it("ignores stale exact revision N without hiding fast revision N plus 1", () => {
     const sceneAdd = vi.spyOn(Scene.prototype, "add");
     const controller = createBeadThreePreviewController(
