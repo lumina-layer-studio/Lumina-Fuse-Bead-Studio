@@ -15,6 +15,7 @@ import {
 import { createBeadProject } from "../src/domain/project";
 import { renderBeadProject } from "../src/domain/renderer";
 import type {
+  BeadCell,
   BeadProject,
   PatternClassification,
   Raster,
@@ -128,6 +129,12 @@ class FakeEngine implements BeadProcessingEngine {
 
   readonly recognitionRequests: RecognitionRequest[] = [];
 
+  readonly renderRequests: Array<{
+    project: BeadProject;
+    compression: number;
+    pixelsPerCell: number;
+  }> = [];
+
   constructor(options: FakeEngineOptions = {}) {
     this.classifications = [...(options.classifications ?? [])];
     this.recognitions = [...(options.recognitions ?? [])];
@@ -151,6 +158,7 @@ class FakeEngine implements BeadProcessingEngine {
     compression: number,
     pixelsPerCell: number,
   ) {
+    this.renderRequests.push({ project, compression, pixelsPerCell });
     return {
       id: this.nextId++,
       promise: Promise.resolve(
@@ -494,6 +502,72 @@ describe("BeadWorkshopModule", () => {
         "status.diagnostics",
       ]),
     );
+    client.close();
+    harness.close();
+  });
+
+  it("opens a saved auto-expanding blank board without picking an image", async () => {
+    const harness = createSdkHarness();
+    const client = await harness.connect();
+    mountWorkshop(client, new FakeEngine());
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "新建空白底板" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "编辑拼豆矩阵" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "原图" })).toBeDisabled();
+    await waitFor(() => {
+      expect(harness.savedProjects().length).toBeGreaterThan(0);
+    });
+    expect(harness.savedProjects().at(-1)?.project).toMatchObject({
+      rows: 32,
+      columns: 32,
+      source: null,
+      canvasMode: "auto-expand",
+    });
+    expect(harness.methods()).not.toContain("image.pick");
+    client.close();
+    harness.close();
+  });
+
+  it("trims blank auto-canvas margins before rendering the Lumina handoff", async () => {
+    const cells: BeadCell[] = Array.from(
+      { length: 4 * 4 },
+      () => ({ kind: "empty" }),
+    );
+    cells[1 * 4 + 2] = { kind: "color", paletteIndex: 0 };
+    const project = createBeadProject({
+      projectId: "auto-handoff",
+      moduleVersion: "1.0.0",
+      now: "2026-07-31T00:00:00.000Z",
+      rows: 4,
+      columns: 4,
+      palette: [[230, 40, 50]],
+      cells,
+      canvasMode: "auto-expand",
+    });
+    const engine = new FakeEngine();
+    const { client, harness } = await startRestoredEditor(project, engine);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "交给 Lumina 转换" }),
+    );
+    await screen.findByRole("dialog", {
+      name: "确认交给 Lumina 转换？",
+    });
+
+    expect(engine.renderRequests).toHaveLength(1);
+    expect(engine.renderRequests[0]?.project).toMatchObject({
+      rows: 1,
+      columns: 1,
+      canvasMode: "auto-expand",
+    });
+    expect(engine.renderRequests[0]?.project.cells).toEqual([
+      { kind: "color", paletteIndex: 0 },
+    ]);
     client.close();
     harness.close();
   });

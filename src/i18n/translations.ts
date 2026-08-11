@@ -7,6 +7,9 @@ const zhCN = {
   "workshop.bead.intro":
     "上传编号格图、硬边像素图或数字圆豆俯视图。下一步会让你确认网格和空格，不会自动猜测倾斜实拍。",
   "workshop.bead.choosePattern": "选择拼豆图纸",
+  "workshop.bead.createBlankCanvas": "新建空白底板",
+  "workshop.bead.blankCanvasHint":
+    "也可以从 32 × 32 空白底板开始，画到边缘时自动扩展。",
   "workshop.bead.supportedInputs":
     "支持 PNG、JPEG、WebP；请选择单个清晰、正视的图案。",
   "workshop.bead.localPrivacy": "分析和项目保存都在本机完成。",
@@ -194,6 +197,9 @@ const enUS = {
   "workshop.bead.intro":
     "Upload a numbered grid, hard-edged pixel chart, or digital top-down ring preview. You will confirm the grid and empty cells; oblique photos are not guessed.",
   "workshop.bead.choosePattern": "Choose bead pattern",
+  "workshop.bead.createBlankCanvas": "Create blank pegboard",
+  "workshop.bead.blankCanvasHint":
+    "Or start from a blank 32 × 32 pegboard that expands near its edges.",
   "workshop.bead.supportedInputs":
     "PNG, JPEG, and WebP are supported. Choose one clear, front-facing pattern.",
   "workshop.bead.localPrivacy":

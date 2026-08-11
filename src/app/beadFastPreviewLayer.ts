@@ -41,9 +41,18 @@ export interface BeadFastPreviewLayer {
 
   /**
    * Applies one lightweight model and starts only new placement animations.
+   * When a cell mask is supplied, only non-zero slots are drawn so an exact
+   * fused surface can remain visible beneath local edits.
+   *
    * 应用一份轻量模型，并且只为新增拼豆启动放置动画。
+   * 传入单格遮罩时，仅绘制非零格，允许局部编辑时保留其余精确融合表面。
    */
-  update(model: FastBeadPreviewModel, revision: number, now: number): void;
+  update(
+    model: FastBeadPreviewModel,
+    revision: number,
+    now: number,
+    visibleCellMask?: Uint8Array,
+  ): void;
 
   /**
    * Advances active placements and reports whether another frame is needed.
@@ -94,7 +103,7 @@ const OUTER_SEGMENTS = 24;
 const INITIAL_SCALE = 0.18;
 const APPEARANCE_END_MS = 80;
 const FALL_END_MS = 270;
-const MAX_SUPERELLIPSE_EXPONENT_DELTA = 1.2;
+const MAX_SUPERELLIPSE_EXPONENT_DELTA = 4;
 const IDENTITY_ROTATION = new Quaternion();
 
 function clamp01(value: number): number {
@@ -261,13 +270,26 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
     return this.currentRevision;
   }
 
-  update(model: FastBeadPreviewModel, revision: number, now: number): void {
+  update(
+    model: FastBeadPreviewModel,
+    revision: number,
+    now: number,
+    visibleCellMask?: Uint8Array,
+  ): void {
     if (this.disposed) return;
     if (revision < this.currentRevision) return;
     const capacity = model.rows * model.columns;
     if (model.slots.length !== capacity) {
       throw new Error(
         `Fast preview slot count ${model.slots.length} does not match ${capacity}.`,
+      );
+    }
+    if (
+      visibleCellMask !== undefined &&
+      visibleCellMask.length !== capacity
+    ) {
+      throw new Error(
+        `Fast preview mask count ${visibleCellMask.length} does not match ${capacity}.`,
       );
     }
 
@@ -395,6 +417,18 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
           }
           matrixDirty = true;
         }
+      }
+    }
+
+    if (visibleCellMask !== undefined) {
+      for (const slot of model.slots) {
+        if (visibleCellMask[slot.cellIndex] !== 0) continue;
+        this.animations.delete(slot.cellIndex);
+        this.exits.delete(slot.cellIndex);
+        this.writeHiddenMatrix(mesh, slot.cellIndex, slot);
+        this.writeHiddenMatrix(outgoingMesh, slot.cellIndex, slot);
+        matrixDirty = true;
+        outgoingMatrixDirty = true;
       }
     }
 
@@ -619,6 +653,27 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
       this.instanceRotation,
       this.instanceScale,
     );
+    if (
+      this.instanceScale.lengthSq() <= Number.EPSILON &&
+      this.snapshotVisible[cellIndex] === 1
+    ) {
+      const geometryOffset = cellIndex * 4;
+      this.instancePosition.set(
+        this.snapshotGeometry[geometryOffset] ?? 0,
+        model.heightMm / 2,
+        this.snapshotGeometry[geometryOffset + 1] ?? 0,
+      );
+      this.instanceScale.set(
+        this.snapshotGeometry[geometryOffset + 2] ?? 1,
+        1,
+        this.snapshotGeometry[geometryOffset + 3] ?? 1,
+      );
+      this.instanceMatrix.compose(
+        this.instancePosition,
+        IDENTITY_ROTATION,
+        this.instanceScale,
+      );
+    }
     this.outgoingMesh.setMatrixAt(cellIndex, this.instanceMatrix);
     if (this.mesh.instanceColor !== null) {
       this.mesh.getColorAt(cellIndex, this.instanceColor);

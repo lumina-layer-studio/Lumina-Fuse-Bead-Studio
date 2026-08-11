@@ -210,6 +210,27 @@ describe("persistent fast bead preview layer", () => {
     expect(layer.hasActiveAnimations()).toBe(true);
   });
 
+  it("renders only masked cells while preserving local paint and erase motion", () => {
+    const scene = new Scene();
+    const layer = createBeadFastPreviewLayer(scene, false);
+    const initial = makeModel([RED, EMPTY]);
+    const painted = makeModel([RED, BLUE]);
+
+    layer.update(initial, 1, 0);
+    layer.update(painted, 2, 10, new Uint8Array([0, 1]));
+    const mesh = fastMesh(scene);
+    const outgoing = outgoingMesh(scene);
+    expectHidden(mesh, 0);
+    expectVisible(mesh, 1);
+
+    layer.advance(10 + BEAD_PLACEMENT_ANIMATION_MS);
+    const erased = makeModel([RED, EMPTY]);
+    layer.update(erased, 3, 400, new Uint8Array([0, 1]));
+    expectHidden(mesh, 0);
+    expectHidden(mesh, 1);
+    expectVisible(outgoing, 1);
+  });
+
   it("ignores stale revisions without rolling back mesh or animation state", () => {
     const scene = new Scene();
     const layer = createBeadFastPreviewLayer(scene, false);
@@ -307,7 +328,7 @@ describe("persistent fast bead preview layer", () => {
     expect(resolveFastBeadSuperellipseExponent(pressedModel.pressure))
       .toBeGreaterThan(2);
     expect(roundRatio).toBeCloseTo(Math.SQRT1_2, 4);
-    expect(pressedRatio).toBeGreaterThan(roundRatio + 0.08);
+    expect(pressedRatio).toBeGreaterThan(0.88);
   });
 
   it("animates only empty-to-color changes across the approved 370ms curve", () => {

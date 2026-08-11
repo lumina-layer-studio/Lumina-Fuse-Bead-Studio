@@ -8,6 +8,9 @@ export const DEFAULT_BEAD_COMPRESSION = 50;
 export const DEFAULT_BEAD_IRREGULARITY = 0;
 export const MAX_BEAD_GRID_SIZE = 128;
 
+/** Canvas growth mode for browser-side free creation. / 浏览器自由创作的画布扩展模式。 */
+export type BeadCanvasMode = "auto-expand";
+
 export type RgbColor = [number, number, number];
 
 export type BeadCell =
@@ -97,6 +100,7 @@ export interface BeadProject {
   beadPitchMm: number;
   compression: number;
   irregularity?: number;
+  canvasMode?: BeadCanvasMode;
   printMapping?: BeadPrintMapping | null;
 }
 
@@ -116,6 +120,7 @@ export interface CreateBeadProjectInput {
   beadPitchMm?: number;
   compression?: number;
   irregularity?: number;
+  canvasMode?: BeadCanvasMode;
   printMapping?: BeadPrintMapping | null;
 }
 

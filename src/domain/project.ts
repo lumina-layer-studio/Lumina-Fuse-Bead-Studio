@@ -405,6 +405,15 @@ export function validateBeadProject(value: unknown): BeadProject {
       "Irregular compression must be an integer from 0 to 100.",
     );
   }
+  if (
+    project.canvasMode !== undefined &&
+    project.canvasMode !== "auto-expand"
+  ) {
+    return fail(
+      "invalid-canvas-mode",
+      "Canvas mode is unsupported.",
+    );
+  }
 
   return value as BeadProject;
 }
@@ -449,11 +458,119 @@ export function createBeadProject(
     compression: input.compression ?? DEFAULT_BEAD_COMPRESSION,
     irregularity:
       input.irregularity ?? DEFAULT_BEAD_IRREGULARITY,
+    ...(input.canvasMode !== undefined
+      ? { canvasMode: input.canvasMode }
+      : {}),
     ...(input.printMapping !== undefined
       ? { printMapping: input.printMapping }
       : {}),
   };
   return validateBeadProject(project);
+}
+
+/** Initial square size for a free-creation canvas. / 自由创作画布的初始正方形边长。 */
+export const AUTO_EXPAND_CANVAS_INITIAL_SIZE = 32;
+/** Edge growth chunk for a free-creation canvas. / 自由创作画布的单次边缘扩展格数。 */
+export const AUTO_EXPAND_CANVAS_GROWTH = 8;
+const AUTO_EXPAND_CANVAS_EDGE_MARGIN = 2;
+
+/**
+ * Result of growing an automatic canvas while preserving the addressed cell.
+ * 自动扩展画布并保留目标格后的结果。
+ */
+export interface AutoCanvasExpansion {
+  project: BeadProject;
+  cellIndex: number;
+}
+
+/**
+ * Adds empty rows and columns around an edge cell in fixed-size chunks.
+ * The project remains bounded by MAX_BEAD_GRID_SIZE for predictable memory use.
+ *
+ * 在靠边格周围按固定块添加空白行列，并受 MAX_BEAD_GRID_SIZE 上限约束，
+ * 从而保持可预测的内存占用。
+ */
+export function expandAutoCanvasAroundCell(
+  project: BeadProject,
+  cellIndex: number,
+): AutoCanvasExpansion {
+  validateBeadProject(project);
+  if (
+    project.canvasMode !== "auto-expand" ||
+    !Number.isInteger(cellIndex) ||
+    cellIndex < 0 ||
+    cellIndex >= project.cells.length
+  ) {
+    return { project, cellIndex };
+  }
+
+  const row = Math.floor(cellIndex / project.columns);
+  const column = cellIndex % project.columns;
+  let remainingRows = MAX_BEAD_GRID_SIZE - project.rows;
+  let remainingColumns = MAX_BEAD_GRID_SIZE - project.columns;
+  const addTop = row < AUTO_EXPAND_CANVAS_EDGE_MARGIN
+    ? Math.min(AUTO_EXPAND_CANVAS_GROWTH, remainingRows)
+    : 0;
+  remainingRows -= addTop;
+  const addBottom =
+    project.rows - 1 - row < AUTO_EXPAND_CANVAS_EDGE_MARGIN
+      ? Math.min(AUTO_EXPAND_CANVAS_GROWTH, remainingRows)
+      : 0;
+  const addLeft = column < AUTO_EXPAND_CANVAS_EDGE_MARGIN
+    ? Math.min(AUTO_EXPAND_CANVAS_GROWTH, remainingColumns)
+    : 0;
+  remainingColumns -= addLeft;
+  const addRight =
+    project.columns - 1 - column < AUTO_EXPAND_CANVAS_EDGE_MARGIN
+      ? Math.min(AUTO_EXPAND_CANVAS_GROWTH, remainingColumns)
+      : 0;
+
+  if (addTop + addBottom + addLeft + addRight === 0) {
+    return { project, cellIndex };
+  }
+
+  const rows = project.rows + addTop + addBottom;
+  const columns = project.columns + addLeft + addRight;
+  const cells: BeadCell[] = Array.from(
+    { length: rows * columns },
+    () => ({ kind: "empty" }),
+  );
+  const remapCellIndex = (oldIndex: number): number => {
+    const oldRow = Math.floor(oldIndex / project.columns);
+    const oldColumn = oldIndex % project.columns;
+    return (oldRow + addTop) * columns + oldColumn + addLeft;
+  };
+  for (let oldIndex = 0; oldIndex < project.cells.length; oldIndex += 1) {
+    cells[remapCellIndex(oldIndex)] = project.cells[oldIndex];
+  }
+
+  const calibration =
+    project.calibration.emptySelection.kind === "sample"
+      ? {
+          ...project.calibration,
+          emptySelection: {
+            kind: "sample" as const,
+            cellIndex: remapCellIndex(
+              project.calibration.emptySelection.cellIndex,
+            ),
+          },
+        }
+      : project.calibration;
+  const expanded = validateBeadProject({
+    ...project,
+    rows,
+    columns,
+    cells,
+    calibration,
+    confidenceIssues: project.confidenceIssues.map((issue) => ({
+      ...issue,
+      cellIndex: remapCellIndex(issue.cellIndex),
+    })),
+  });
+  return {
+    project: expanded,
+    cellIndex: remapCellIndex(cellIndex),
+  };
 }
 
 export function trimEmptyBorder(project: BeadProject): BeadProject {
@@ -626,6 +743,7 @@ interface BeadRecipePayload {
   beadPitchMm: number;
   compression: number;
   irregularity?: number;
+  canvasMode?: "auto-expand";
 }
 
 export function createBeadRecipeSource(
@@ -646,6 +764,9 @@ export function createBeadRecipeSource(
     compression: project.compression,
     ...((project.irregularity ?? DEFAULT_BEAD_IRREGULARITY) > 0
       ? { irregularity: project.irregularity }
+      : {}),
+    ...(project.canvasMode === "auto-expand"
+      ? { canvasMode: project.canvasMode }
       : {}),
   };
   assertRecipePayloadBound(payload);
@@ -688,6 +809,12 @@ export function restoreBeadProjectFromRecipeSource(
   if (payload.payloadVersion !== BEAD_RECIPE_PAYLOAD_VERSION) {
     return fail("invalid-recipe-source", "Bead recipe payload version is unsupported.");
   }
+  if (
+    payload.canvasMode !== undefined &&
+    payload.canvasMode !== "auto-expand"
+  ) {
+    return fail("invalid-recipe-source", "Bead recipe canvas mode is unsupported.");
+  }
   if (!isGridDimension(payload.rows) || !isGridDimension(payload.columns)) {
     return fail("invalid-dimensions", "Bead recipe grid is invalid.");
   }
@@ -723,5 +850,9 @@ export function restoreBeadProjectFromRecipeSource(
     beadPitchMm: payload.beadPitchMm as number,
     compression: payload.compression as number,
     irregularity: payload.irregularity as number | undefined,
+    canvasMode:
+      payload.canvasMode === "auto-expand"
+        ? "auto-expand"
+        : undefined,
   });
 }

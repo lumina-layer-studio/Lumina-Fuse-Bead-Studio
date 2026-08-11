@@ -2,6 +2,7 @@ import {
   AmbientLight,
   BufferGeometry,
   CylinderGeometry,
+  DataTexture,
   DirectionalLight,
   DoubleSide,
   DynamicDrawUsage,
@@ -12,14 +13,18 @@ import {
   Mesh,
   MeshPhysicalMaterial,
   MOUSE,
+  NearestFilter,
   Object3D,
   Plane,
   PerspectiveCamera,
   Raycaster,
+  RedFormat,
   Scene,
   SRGBColorSpace,
+  UnsignedByteType,
   Vector2,
   Vector3,
+  Vector4,
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -198,6 +203,7 @@ function physicalLayoutKey(project: BeadProject): string {
 interface PendingFastPreview {
   model: FastBeadPreviewModel;
   revision: number;
+  visibleCellMask: Uint8Array | null;
 }
 
 interface PendingExactModel {
@@ -271,10 +277,19 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
   private fastLayer: BeadFastPreviewLayer;
   private pendingFastPreview: PendingFastPreview | null = null;
   private latestFastModel: FastBeadPreviewModel | null = null;
+  private latestFastModelRevision = -1;
+  private latestFastVisibleCellMask: Uint8Array | null = null;
+  private currentExactFastModel: FastBeadPreviewModel | null = null;
   private pendingExactModel: PendingExactModel | null = null;
   private exactBuildArmed = false;
   private latestPreviewRevision = -1;
   private currentExactRevision: number | null = null;
+  private exactEditMaskTexture: DataTexture | null = null;
+  private exactEditMaskData = new Uint8Array(0);
+  private exactEditMaskRows = 0;
+  private exactEditMaskColumns = 0;
+  private readonly exactEditMaskGrid = new Vector4();
+  private exactEditMaskPitchMm = 1;
   private physicalLayoutCacheKey: string | null = null;
   private physicalLayoutCache: PhysicalPreviewLayout | null = null;
   private reducedMotionQuery: MediaQueryList | null = null;
@@ -351,9 +366,16 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     const layout = this.resolvePhysicalLayout(project);
     this.applySceneLayout(layout, project.rows, project.columns);
     const fastModel = buildFastBeadPreviewModel(project, layout);
+    const visibleCellMask = this.resolveLocalEditMask(fastModel);
     this.latestPreviewRevision = revision;
     this.latestFastModel = fastModel;
-    this.pendingFastPreview = { model: fastModel, revision };
+    this.latestFastModelRevision = revision;
+    this.latestFastVisibleCellMask = visibleCellMask;
+    this.pendingFastPreview = {
+      model: fastModel,
+      revision,
+      visibleCellMask,
+    };
     this.clearPendingExactModel();
     this.scheduleRender();
   }
@@ -402,6 +424,13 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     this.logicalPitchMm = model.beadPitchMm;
     this.logicalColumns = Math.max(0, columns);
     this.logicalRows = Math.max(0, rows);
+    this.ensureExactEditMask(
+      this.logicalRows,
+      this.logicalColumns,
+      model.widthMm,
+      model.depthMm,
+      model.beadPitchMm,
+    );
     const editPlaneY = Math.max(model.heightMm, model.board.pegHeightMm);
     this.editPlane.constant = -editPlaneY;
     this.markerY = editPlaneY + Math.max(0.02, model.beadPitchMm * 0.015);
@@ -435,6 +464,151 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
       this.framedMinimumY = minimumY;
       this.framedMaximumY = maximumY;
     }
+  }
+
+  private resolveLocalEditMask(
+    model: FastBeadPreviewModel,
+  ): Uint8Array | null {
+    const baseline = this.currentExactFastModel;
+    if (
+      baseline === null ||
+      this.currentExactRevision === null ||
+      baseline.pressure !== 1 ||
+      model.pressure !== 1 ||
+      baseline.projectId !== model.projectId ||
+      baseline.rows !== model.rows ||
+      baseline.columns !== model.columns ||
+      baseline.beadPitchMm !== model.beadPitchMm ||
+      baseline.outerRadiusMm !== model.outerRadiusMm ||
+      baseline.holeRadiusMm !== model.holeRadiusMm ||
+      baseline.contactReachMm !== model.contactReachMm ||
+      baseline.heightMm !== model.heightMm
+    ) {
+      return null;
+    }
+
+    const mask = new Uint8Array(model.slots.length);
+    for (let index = 0; index < model.slots.length; index += 1) {
+      const before = baseline.slots[index];
+      const after = model.slots[index];
+      if (before === undefined || after === undefined) {
+        mask[index] = 255;
+        continue;
+      }
+      const colorChanged =
+        before.color?.[0] !== after.color?.[0] ||
+        before.color?.[1] !== after.color?.[1] ||
+        before.color?.[2] !== after.color?.[2];
+      if (
+        before.visible !== after.visible ||
+        colorChanged
+      ) {
+        mask[index] = 255;
+      }
+    }
+    return mask;
+  }
+
+  private ensureExactEditMask(
+    rows: number,
+    columns: number,
+    widthMm: number,
+    depthMm: number,
+    pitchMm: number,
+  ): void {
+    const capacity = rows * columns;
+    this.exactEditMaskGrid.set(columns, rows, widthMm, depthMm);
+    this.exactEditMaskPitchMm = pitchMm;
+    if (
+      this.exactEditMaskTexture !== null &&
+      this.exactEditMaskData.length === capacity &&
+      this.exactEditMaskRows === rows &&
+      this.exactEditMaskColumns === columns
+    ) {
+      return;
+    }
+    this.disposeExactEditMask();
+    this.exactEditMaskData = new Uint8Array(capacity);
+    const texture = new DataTexture(
+      this.exactEditMaskData,
+      Math.max(columns, 1),
+      Math.max(rows, 1),
+      RedFormat,
+      UnsignedByteType,
+    );
+    texture.minFilter = NearestFilter;
+    texture.magFilter = NearestFilter;
+    texture.generateMipmaps = false;
+    texture.flipY = false;
+    texture.needsUpdate = true;
+    this.exactEditMaskTexture = texture;
+    this.exactEditMaskRows = rows;
+    this.exactEditMaskColumns = columns;
+  }
+
+  private applyExactEditMask(mask: Uint8Array): void {
+    if (
+      this.exactEditMaskTexture === null ||
+      mask.length !== this.exactEditMaskData.length
+    ) {
+      return;
+    }
+    this.exactEditMaskData.set(mask);
+    this.exactEditMaskTexture.needsUpdate = true;
+  }
+
+  private clearExactEditMask(): void {
+    if (this.exactEditMaskTexture === null) return;
+    this.exactEditMaskData.fill(0);
+    this.exactEditMaskTexture.needsUpdate = true;
+  }
+
+  private configureExactEditMask(material: MeshPhysicalMaterial): void {
+    material.onBeforeCompile = (shader) => {
+      const texture = this.exactEditMaskTexture;
+      if (texture === null) return;
+      shader.uniforms.beadEditMask = { value: texture };
+      shader.uniforms.beadEditGrid = {
+        value: this.exactEditMaskGrid.clone(),
+      };
+      shader.uniforms.beadEditPitch = {
+        value: this.exactEditMaskPitchMm,
+      };
+      shader.vertexShader = `
+varying vec3 vBeadEditPosition;
+${shader.vertexShader.replace(
+  "#include <begin_vertex>",
+  "#include <begin_vertex>\nvBeadEditPosition = transformed;",
+)}`;
+      shader.fragmentShader = `
+uniform sampler2D beadEditMask;
+uniform vec4 beadEditGrid;
+uniform float beadEditPitch;
+varying vec3 vBeadEditPosition;
+${shader.fragmentShader.replace(
+  "#include <clipping_planes_fragment>",
+  `#include <clipping_planes_fragment>
+vec2 beadEditCell = clamp(
+  floor(vec2(
+    (vBeadEditPosition.x + beadEditGrid.z * 0.5) / beadEditPitch,
+    (vBeadEditPosition.z + beadEditGrid.w * 0.5) / beadEditPitch
+  )),
+  vec2(0.0),
+  beadEditGrid.xy - vec2(1.0)
+);
+vec2 beadEditUv = (beadEditCell + 0.5) / beadEditGrid.xy;
+if (texture2D(beadEditMask, beadEditUv).r > 0.5) discard;`,
+)}`;
+    };
+    material.customProgramCacheKey = () => "bead-exact-edit-mask-v1";
+  }
+
+  private disposeExactEditMask(): void {
+    this.exactEditMaskTexture?.dispose();
+    this.exactEditMaskTexture = null;
+    this.exactEditMaskData = new Uint8Array(0);
+    this.exactEditMaskRows = 0;
+    this.exactEditMaskColumns = 0;
   }
 
   pickCellAt(clientX: number, clientY: number): number | null {
@@ -561,6 +735,7 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     this.clearPendingExactModel();
     this.disposeBoard();
     this.disposeSurfaces();
+    this.disposeExactEditMask();
     this.disposeMarker(this.hoverMarker);
     this.disposeMarker(this.selectedMarker);
     this.renderer.dispose();
@@ -643,6 +818,7 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
       this.pendingFastPreview = {
         model: this.latestFastModel,
         revision: this.latestPreviewRevision,
+        visibleCellMask: this.latestFastVisibleCellMask,
       };
     }
     this.scheduleRender();
@@ -767,6 +943,7 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
             clearcoatRoughness: 0.5,
             side: DoubleSide,
           });
+          this.configureExactEditMask(material);
           const mesh = new Mesh(geometry, material);
           mesh.name = `bead-preview-surface-${index}`;
           meshes.push(mesh);
@@ -947,6 +1124,11 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     this.disposeSurfaces();
     this.surfaceMeshes = meshes;
     this.currentExactRevision = revision;
+    this.currentExactFastModel =
+      revision !== null && revision === this.latestFastModelRevision
+        ? this.latestFastModel
+        : null;
+    this.clearExactEditMask();
     for (const mesh of meshes) {
       mesh.visible = true;
       this.scene.add(mesh);
@@ -982,9 +1164,19 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
           pendingFast.model,
           pendingFast.revision,
           timestamp,
+          pendingFast.visibleCellMask ?? undefined,
         );
         this.fastLayer.setVisible(true);
-        this.hideAllExactPreviews();
+        if (
+          pendingFast.visibleCellMask !== null &&
+          this.surfaceMeshes.length > 0
+        ) {
+          this.applyExactEditMask(pendingFast.visibleCellMask);
+          for (const mesh of this.surfaceMeshes) mesh.visible = true;
+        } else {
+          this.clearExactEditMask();
+          this.hideAllExactPreviews();
+        }
       }
     }
 

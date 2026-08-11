@@ -7,7 +7,10 @@ import type {
   BeadEditorTool,
 } from "../domain/editorReducer";
 import { estimateBeadThicknessMm } from "../domain/beadThickness";
-import { calculatePhysicalSize } from "../domain/project";
+import {
+  calculatePhysicalSize,
+  trimEmptyBorder,
+} from "../domain/project";
 import type {
   BeadPrintMapping,
   Raster,
@@ -155,6 +158,13 @@ export function BeadEditorStep({
   const [view, setView] = useState<EditorView>("matrix");
   const [showGrid, setShowGrid] = useState(true);
   const project = state.present;
+  const outputProject = useMemo(
+    () =>
+      project.canvasMode === "auto-expand"
+        ? trimEmptyBorder(project)
+        : project,
+    [project],
+  );
   const unresolvedIssueIndices = useMemo(
     () =>
       project.confidenceIssues.flatMap((issue, index) =>
@@ -165,7 +175,10 @@ export function BeadEditorStep({
   const selectedPendingPosition = unresolvedIssueIndices.indexOf(
     state.selectedIssueIndex ?? -1,
   );
-  const size = calculatePhysicalSize(project, project.beadPitchMm);
+  const size = calculatePhysicalSize(
+    outputProject,
+    project.beadPitchMm,
+  );
   const estimatedThicknessMm = estimateBeadThicknessMm(
     project.compression,
     project.beadPitchMm,

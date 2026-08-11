@@ -1,4 +1,7 @@
-import { validateBeadProject } from "./project";
+import {
+  expandAutoCanvasAroundCell,
+  validateBeadProject,
+} from "./project";
 import type {
   BeadCell,
   BeadPrintMapping,
@@ -704,14 +707,40 @@ export function beadEditorReducer(
     state.present,
     new Set(cellPatches.map((patch) => patch.index)),
   );
+  const patchEntry = {
+    kind: "patch" as const,
+    cellPatches,
+    issuePatches,
+    beforeUpdatedAt: state.present.updatedAt,
+    afterUpdatedAt: action.updatedAt ?? state.present.updatedAt,
+  };
+  if (tool === "paint" && state.present.canvasMode === "auto-expand") {
+    const paintedProject = applyHistoryEntry(
+      state.present,
+      patchEntry,
+      "forward",
+    );
+    const expanded = expandAutoCanvasAroundCell(
+      paintedProject,
+      action.cellIndex,
+    );
+    if (expanded.project !== paintedProject) {
+      const expandedState = commitHistoryEntry(state, {
+        kind: "project",
+        beforeProject: cloneBeadProject(state.present),
+        afterProject: cloneBeadProject(expanded.project),
+      });
+      return {
+        ...expandedState,
+        activeTool: state.activeTool,
+        activePaletteIndex: state.activePaletteIndex,
+        selectedCellIndex: expanded.cellIndex,
+        selectedIssueIndex: state.selectedIssueIndex,
+      };
+    }
+  }
   return {
-    ...commitHistoryEntry(state, {
-      kind: "patch",
-      cellPatches,
-      issuePatches,
-      beforeUpdatedAt: state.present.updatedAt,
-      afterUpdatedAt: action.updatedAt ?? state.present.updatedAt,
-    }),
+    ...commitHistoryEntry(state, patchEntry),
     selectedCellIndex: action.cellIndex,
   };
 }

@@ -17,7 +17,9 @@ import {
   type BeadEditorState,
 } from "../domain/editorReducer";
 import {
+  AUTO_EXPAND_CANVAS_INITIAL_SIZE,
   createBeadProject,
+  trimEmptyBorder,
   validateBeadProject,
 } from "../domain/project";
 import { cropRaster, suggestGrid } from "../domain/recognition";
@@ -1056,12 +1058,20 @@ export function BeadWorkshopModule({
       }),
     );
     try {
+      const handoffProject =
+        project.canvasMode === "auto-expand"
+          ? trimEmptyBorder(project)
+          : project;
       const engine = getEngine();
-      const task = engine.render(project, project.compression, 32);
+      const task = engine.render(
+        handoffProject,
+        handoffProject.compression,
+        32,
+      );
       engine.cancelBefore(task.id);
       const raster = await task.promise;
       const handoff = await prepareBeadHandoff(
-        project,
+        handoffProject,
         raster,
         imageCodec,
         hasCurrentPrintMapping
@@ -1158,6 +1168,41 @@ export function BeadWorkshopModule({
     });
   };
 
+  const handleCreateBlankProject = () => {
+    invalidateProcessing();
+    engineRef.current?.cancelBefore(Number.MAX_SAFE_INTEGER);
+    setProcessingPhase("idle");
+    ignoreFailure(client.status.progress(null));
+    const now = new Date().toISOString();
+    const project = createBeadProject({
+      projectId: generatedProjectId(),
+      moduleVersion: BEAD_MODULE_VERSION,
+      now,
+      rows: AUTO_EXPAND_CANVAS_INITIAL_SIZE,
+      columns: AUTO_EXPAND_CANVAS_INITIAL_SIZE,
+      palette: [[0, 0, 0]],
+      source: null,
+      canvasMode: "auto-expand",
+    });
+    setEditorState(createBeadEditorState(project));
+    setStage("editor");
+    setClassification(null);
+    setCalibrationDraft(null);
+    setOriginalRaster(null);
+    setWorkingRaster(null);
+    setProjectSource(null);
+    setCrop(null);
+    setCropOpen(false);
+    setRecalibrationSession(null);
+    setHandoffSummary(null);
+    setPendingReplacement(null);
+    setHandoffBusy(false);
+    clearVisibleError();
+    setResumed(false);
+    setPreviewColorMode("source");
+    latestProjectRef.current = project;
+  };
+
   const handleNewProject = () => {
     const latest = latestProjectRef.current;
     if (latest) void persistProject(latest);
@@ -1229,11 +1274,19 @@ export function BeadWorkshopModule({
                 <p className="sample-summary">
                   {t("workshop.bead.localPrivacy")}
                 </p>
+                <p className="sample-summary">
+                  {t("workshop.bead.blankCanvasHint")}
+                </p>
               </div>
               <Button
                 label={t("workshop.bead.choosePattern")}
                 loading={isPicking}
                 onClick={handlePickImage}
+              />
+              <Button
+                label={t("workshop.bead.createBlankCanvas")}
+                variant="secondary"
+                onClick={handleCreateBlankProject}
               />
             </section>
           </>

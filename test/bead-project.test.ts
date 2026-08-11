@@ -7,6 +7,7 @@ import {
   createBeadRecipeSource,
   decodeBeadCellsRle,
   encodeBeadCellsRle,
+  expandAutoCanvasAroundCell,
   restoreBeadProjectFromRecipeSource,
   trimEmptyBorder,
   validateBeadProject,
@@ -193,6 +194,63 @@ describe("bead project model", () => {
     expect(trimEmptyBorder(project)).toBe(project);
   });
 
+  it("expands an auto canvas around an edge cell without moving its artwork", () => {
+    const cells: BeadCell[] = Array.from(
+      { length: 4 * 4 },
+      () => ({ kind: "empty" }) as const,
+    );
+    cells[0] = { kind: "color", paletteIndex: 1 };
+    const project = createBeadProject({
+      projectId: "auto-canvas",
+      moduleVersion: "1.0.0",
+      now: NOW,
+      rows: 4,
+      columns: 4,
+      palette: PALETTE,
+      cells,
+      canvasMode: "auto-expand",
+      confidenceIssues: [{
+        cellIndex: 0,
+        confidence: 0.4,
+        reasons: ["overlay-obstruction"],
+        resolved: false,
+      }],
+    });
+
+    const expanded = expandAutoCanvasAroundCell(project, 0);
+
+    expect(expanded.project.rows).toBe(12);
+    expect(expanded.project.columns).toBe(12);
+    expect(expanded.cellIndex).toBe(8 * 12 + 8);
+    expect(expanded.project.cells[expanded.cellIndex]).toEqual({
+      kind: "color",
+      paletteIndex: 1,
+    });
+    expect(expanded.project.confidenceIssues[0]?.cellIndex).toBe(
+      expanded.cellIndex,
+    );
+    expect(project.rows).toBe(4);
+    expect(project.columns).toBe(4);
+  });
+
+  it("keeps fixed and maximum-size canvases bounded", () => {
+    const fixed = makeProject();
+    expect(expandAutoCanvasAroundCell(fixed, 0).project).toBe(fixed);
+
+    const maximum = createBeadProject({
+      projectId: "maximum-auto-canvas",
+      moduleVersion: "1.0.0",
+      now: NOW,
+      rows: 128,
+      columns: 128,
+      palette: PALETTE,
+      canvasMode: "auto-expand",
+    });
+    const expanded = expandAutoCanvasAroundCell(maximum, 0);
+    expect(expanded.project).toBe(maximum);
+    expect(expanded.cellIndex).toBe(0);
+  });
+
   it("calculates exact decimal dimensions from logical grid pitch", () => {
     expect(calculatePhysicalSize(makeProject(), 2.6)).toEqual({
       widthMm: 7.8,
@@ -303,6 +361,10 @@ describe("bead project model", () => {
     expectInvalid({ ...project, compression: 50.5 }, "invalid-compression");
     expectInvalid({ ...project, irregularity: 100.5 }, "invalid-irregularity");
     expectInvalid({ ...project, irregularity: -1 }, "invalid-irregularity");
+    expectInvalid(
+      { ...project, canvasMode: "endless" },
+      "invalid-canvas-mode",
+    );
   });
 
   it("round-trips an editable matrix through the source-only recipe payload", () => {
@@ -360,6 +422,19 @@ describe("bead project model", () => {
       },
     });
     expect(source.payload).toMatchObject({ irregularity: 67 });
+  });
+
+  it("round-trips the auto-expanding canvas mode through a recipe", () => {
+    const source = createBeadRecipeSource(
+      makeProject({ canvasMode: "auto-expand" }),
+    );
+    const restored = restoreBeadProjectFromRecipeSource(source, {
+      projectId: "restored-auto-canvas",
+      now: NOW,
+    });
+
+    expect(source.payload).toMatchObject({ canvasMode: "auto-expand" });
+    expect(restored.canvasMode).toBe("auto-expand");
   });
 
   it("rejects recipe payloads for another module or with incomplete RLE", () => {

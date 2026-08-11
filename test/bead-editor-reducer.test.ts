@@ -253,6 +253,51 @@ describe("bead editor reducer", () => {
     expect(state.present.cells[3]).toEqual({ kind: "empty" });
   });
 
+  it("grows an auto canvas at the edge as one reversible paint action", () => {
+    const project = createBeadProject({
+      projectId: "auto-editor",
+      moduleVersion: "1.0.0",
+      now: NOW,
+      rows: 4,
+      columns: 4,
+      palette: [[230, 40, 50]],
+      canvasMode: "auto-expand",
+    });
+    let state = createBeadEditorState(project);
+
+    state = beadEditorReducer(state, {
+      type: "apply-tool",
+      tool: "paint",
+      cellIndex: 0,
+      paletteIndex: 0,
+      updatedAt: "2026-07-30T00:01:00.000Z",
+    });
+
+    expect(state.present.rows).toBe(12);
+    expect(state.present.columns).toBe(12);
+    expect(state.selectedCellIndex).toBe(8 * 12 + 8);
+    expect(state.present.cells[state.selectedCellIndex!]).toEqual({
+      kind: "color",
+      paletteIndex: 0,
+    });
+    expect(state.past.at(-1)?.kind).toBe("project");
+
+    state = beadEditorReducer(state, { type: "undo" });
+    expect(state.present.rows).toBe(4);
+    expect(state.present.columns).toBe(4);
+    expect(state.present.cells.every((cell) => cell.kind === "empty")).toBe(
+      true,
+    );
+
+    state = beadEditorReducer(state, { type: "redo" });
+    expect(state.present.rows).toBe(12);
+    expect(state.present.columns).toBe(12);
+    expect(state.present.cells[8 * 12 + 8]).toEqual({
+      kind: "color",
+      paletteIndex: 0,
+    });
+  });
+
   it("flood-fills only the four-neighbour connected target region", () => {
     const cells: BeadCell[] = [
       { kind: "color", paletteIndex: 0 },

@@ -15,6 +15,7 @@ import {
   type BeadEditorAction,
 } from "../src/domain/editorReducer";
 import { createBeadProject } from "../src/domain/project";
+import type { BeadCell } from "../src/domain/types";
 import { translate } from "../src/i18n/translations";
 
 const threePreviewCapture = vi.hoisted(() => ({
@@ -95,6 +96,37 @@ describe("BeadEditorStep", () => {
       HTMLCanvasElement.prototype,
       "getContext",
     ).mockReturnValue(null);
+  });
+
+  it("reports occupied output size instead of blank auto-canvas margins", () => {
+    const cells: BeadCell[] = Array.from(
+      { length: 4 * 4 },
+      () => ({ kind: "empty" }),
+    );
+    cells[1 * 4 + 2] = { kind: "color", paletteIndex: 0 };
+    const blankProject = createBeadProject({
+      projectId: "auto-size",
+      moduleVersion: "1.0.0",
+      now: "2026-07-30T00:00:00.000Z",
+      rows: 4,
+      columns: 4,
+      palette: [[230, 40, 50]],
+      cells,
+      canvasMode: "auto-expand",
+    });
+
+    render(
+      <BeadEditorStep
+        state={createBeadEditorState(blankProject)}
+        sourceRaster={null}
+        translate={t}
+        dispatch={vi.fn()}
+        onNewProject={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("2.6 × 2.6 mm")).toBeInTheDocument();
+    expect(screen.getByText("4 × 4")).toBeInTheDocument();
   });
 
   it("exposes every matrix tool, review direction, view, and history control", () => {

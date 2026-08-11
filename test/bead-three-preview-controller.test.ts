@@ -246,6 +246,7 @@ function makeProject(
     rows?: number;
     columns?: number;
     compression?: number;
+    irregularity?: number;
   } = {},
 ): BeadProject {
   const rows = overrides.rows ?? 1;
@@ -263,7 +264,7 @@ function makeProject(
     ],
     beadPitchMm: 2.6,
     compression: overrides.compression ?? 65,
-    irregularity: 35,
+    irregularity: overrides.irregularity ?? 35,
   });
 }
 
@@ -1057,18 +1058,24 @@ describe("beadThreePreviewController resource lifecycle", () => {
     controller.dispose();
   });
 
-  it("shows the fast paint layer and hides the current exact surface", () => {
+  it("keeps the 100% fused surface stable and previews only the painted cell", () => {
     const sceneAdd = vi.spyOn(Scene.prototype, "add");
     const controller = createBeadThreePreviewController(
       document.createElement("canvas"),
       vi.fn(),
     );
-    const initial = makeProject([RED_CELL, EMPTY_CELL]);
-    const painted = makeProject([RED_CELL, BLUE_CELL]);
-    const exact = makeGridModel(1, 2);
+    const initial = makeProject(
+      [RED_CELL, RED_CELL, EMPTY_CELL],
+      { compression: 100 },
+    );
+    const painted = makeProject(
+      [RED_CELL, RED_CELL, BLUE_CELL],
+      { compression: 100 },
+    );
+    const exact = makeGridModel(1, 3);
     exact.surfacePaths[0] = {
       ...exact.surfacePaths[0]!,
-      d: "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+      d: "M 0 0 L 2 0 L 2 1 L 0 1 Z",
     };
 
     previewProject(controller, initial, 1);
@@ -1091,8 +1098,178 @@ describe("beadThreePreviewController resource lifecycle", () => {
     flushFrame(10);
 
     expect(fastMesh.visible).toBe(true);
+    expect(exactMesh.visible).toBe(true);
+
+    const material = exactMesh.material as MeshPhysicalMaterial;
+    const shader = {
+      uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: "#include <begin_vertex>",
+      fragmentShader: "#include <clipping_planes_fragment>",
+    };
+    material.onBeforeCompile(shader as never, {} as never);
+    const mask = shader.uniforms.beadEditMask?.value as {
+      image: { data: Uint8Array };
+    };
+    expect(Array.from(mask.image.data)).toEqual([0, 0, 255]);
+    expect(shader.fragmentShader).toContain("discard");
+    expect(shader.fragmentShader).toContain("clamp(");
+    expect(readInstanceMatrix(fastMesh, 0).elements[0]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 0).elements[5]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 0).elements[10]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 1).elements[0]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 1).elements[5]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 1).elements[10]).toBe(0);
+    expect(readInstanceScale(fastMesh, 2).x).toBeGreaterThan(0);
+    controller.dispose();
+  });
+
+  it("rebuilds the exact edit mask when equal-capacity grid dimensions change", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const horizontal = makeProject(
+      [RED_CELL, RED_CELL],
+      { rows: 1, columns: 2, compression: 100 },
+    );
+    const vertical = makeProject(
+      [RED_CELL, BLUE_CELL],
+      { rows: 2, columns: 1, compression: 100 },
+    );
+
+    previewProject(controller, horizontal, 1);
+    flushFrame(0);
+    controller.update(makeGridModel(1, 2), 1);
+    flushFrame(1);
+    flushFrame(2);
+
+    previewProject(controller, vertical, 2);
+    flushFrame(10);
+    controller.update(makeGridModel(2, 1), 2);
+    flushFrame(10 + BEAD_PLACEMENT_ANIMATION_MS);
+    flushFrame(10 + BEAD_PLACEMENT_ANIMATION_MS + 1);
+
+    const exactMeshes = sceneAdd.mock.calls
+      .flat()
+      .filter((candidate) => candidate.name === "bead-preview-surface-0");
+    const material = (exactMeshes.at(-1) as Mesh | undefined)
+      ?.material as MeshPhysicalMaterial;
+    const shader = {
+      uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: "#include <begin_vertex>",
+      fragmentShader: "#include <clipping_planes_fragment>",
+    };
+    material.onBeforeCompile(shader as never, {} as never);
+    const texture = shader.uniforms.beadEditMask?.value as {
+      image: { width: number; height: number };
+    };
+    expect(texture.image.width).toBe(1);
+    expect(texture.image.height).toBe(2);
+    controller.dispose();
+  });
+
+  it("uses a full fast preview for global 100% irregularity changes", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const initial = makeProject(
+      [RED_CELL, BLUE_CELL],
+      { compression: 100, irregularity: 0 },
+    );
+    const changed = makeProject(
+      [RED_CELL, BLUE_CELL],
+      { compression: 100, irregularity: 100 },
+    );
+
+    previewProject(controller, initial, 1);
+    flushFrame(0);
+    controller.update(makeGridModel(1, 2), 1);
+    flushFrame(1);
+    flushFrame(2);
+    const exactMesh = findNamedObject<Mesh>(
+      sceneAdd,
+      "bead-preview-surface-0",
+    );
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+
+    previewProject(controller, changed, 2);
+    flushFrame(10);
+
     expect(exactMesh.visible).toBe(false);
+    expect(readInstanceScale(fastMesh, 0).x).toBeGreaterThan(0);
     expect(readInstanceScale(fastMesh, 1).x).toBeGreaterThan(0);
+    controller.dispose();
+  });
+
+  it("keeps the 100% fused surface stable while one bead erases locally", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const initial = makeProject(
+      [RED_CELL, RED_CELL, BLUE_CELL],
+      { compression: 100 },
+    );
+    const erased = makeProject(
+      [RED_CELL, RED_CELL, EMPTY_CELL],
+      { compression: 100 },
+    );
+    const exact = makeGridModel(1, 3);
+    exact.surfacePaths[0] = {
+      ...exact.surfacePaths[0]!,
+      d: "M 0 0 L 3 0 L 3 1 L 0 1 Z",
+    };
+
+    previewProject(controller, initial, 1);
+    flushFrame(0);
+    controller.update(exact, 1);
+    flushFrame(1);
+    flushFrame(2);
+    const exactMesh = findNamedObject<Mesh>(
+      sceneAdd,
+      "bead-preview-surface-0",
+    );
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    const outgoing = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-outgoing",
+    );
+
+    previewProject(controller, erased, 2);
+    flushFrame(10);
+
+    expect(exactMesh.visible).toBe(true);
+    const material = exactMesh.material as MeshPhysicalMaterial;
+    const shader = {
+      uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: "#include <begin_vertex>",
+      fragmentShader: "#include <clipping_planes_fragment>",
+    };
+    material.onBeforeCompile(shader as never, {} as never);
+    const mask = shader.uniforms.beadEditMask?.value as {
+      image: { data: Uint8Array };
+    };
+    expect(Array.from(mask.image.data)).toEqual([0, 0, 255]);
+    expect(readInstanceMatrix(fastMesh, 0).elements[0]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 0).elements[5]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 0).elements[10]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 1).elements[0]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 1).elements[5]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 1).elements[10]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 2).elements[0]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 2).elements[5]).toBe(0);
+    expect(readInstanceMatrix(fastMesh, 2).elements[10]).toBe(0);
+    expect(readInstanceScale(outgoing, 2).x).toBeGreaterThan(0);
     controller.dispose();
   });
 
