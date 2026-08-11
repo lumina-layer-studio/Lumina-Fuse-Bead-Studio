@@ -131,6 +131,12 @@ describe("Workshop theme contract", () => {
     expect(css).toMatch(
       /\.bead-three-preview__toolbar\s*{[^}]*max-width:\s*calc\(100% - 24px\)\s*;[^}]*overflow-x:\s*auto\s*;/,
     );
+    expect(css).toMatch(
+      /\.bead-three-preview__hint\s*{[^}]*pointer-events:\s*none\s*;/,
+    );
+    expect(css).toMatch(
+      /\.bead-three-preview__rendering-status\s*{[^}]*pointer-events:\s*none\s*;/,
+    );
     const compactHeaderStart = css.indexOf(
       "@container bead-editor-workspace (max-width: 1100px)",
     );

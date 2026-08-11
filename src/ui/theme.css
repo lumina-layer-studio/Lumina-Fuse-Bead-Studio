@@ -661,6 +661,23 @@ select:focus-visible,
   box-shadow: var(--bead-shadow);
   font-size: 0.75rem;
   line-height: 1.5;
+  pointer-events: none;
+}
+
+.bead-three-preview__rendering-status {
+  position: absolute;
+  bottom: 76px;
+  left: 12px;
+  z-index: 2;
+  border: 1px solid var(--bead-border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--bead-text);
+  background: color-mix(in srgb, var(--bead-surface-strong) 92%, transparent);
+  box-shadow: var(--bead-shadow);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  pointer-events: none;
 }
 
 .bead-canvas--interactive {

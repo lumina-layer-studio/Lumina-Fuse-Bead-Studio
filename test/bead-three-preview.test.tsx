@@ -111,6 +111,7 @@ function translateThreePreviewControls(key: string): string {
     "workshop.bead.threeInteractionMode": "3D interaction mode",
     "workshop.bead.threeEditMode": "Edit",
     "workshop.bead.threeViewMode": "View",
+    "workshop.bead.threeRendering": "Updating 3D preview…",
   };
   return messages[key] ?? key;
 }
@@ -263,6 +264,88 @@ describe("BeadThreePreview", () => {
       buildPhysicalPreviewModel(project, surfacePaths),
     );
     expect(canvas).toHaveAttribute("aria-busy", "false");
+  });
+
+  it("shows immediate feedback while the exact 3D surface catches up", async () => {
+    vi.useFakeTimers();
+    const project = makeProject();
+    const updatedProject = {
+      ...project,
+      cells: [
+        { kind: "empty" as const },
+        project.cells[1],
+      ],
+    };
+    const controller = makeController();
+    vi.mocked(controller.pickCellAt).mockReturnValue(0);
+    const onPickCell = vi.fn();
+    const initialPending = deferred<BeadFusionSvgPath[]>();
+    const updatedPending = deferred<BeadFusionSvgPath[]>();
+    const renderer = makeSurfaceRenderer(initialPending.promise);
+    renderer.render
+      .mockReturnValueOnce(initialPending.promise)
+      .mockReturnValueOnce(updatedPending.promise);
+    const view = render(
+      <BeadThreePreview
+        project={project}
+        ariaLabel="有即时反馈的三维预览"
+        createController={() => controller}
+        createSurfaceRenderer={() => renderer}
+        onPickCell={onPickCell}
+        allowDrag
+        translate={translateThreePreviewControls}
+      />,
+    );
+
+    expect(
+      screen.getByRole("status", { name: "Updating 3D preview…" }),
+    ).toBeVisible();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120);
+      initialPending.resolve(makeSurfacePaths());
+      await initialPending.promise;
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    const canvas = screen.getByRole("img", {
+      name: "有即时反馈的三维预览",
+    });
+    installPointerCaptureSpies(canvas as HTMLCanvasElement);
+    dispatchPointer(canvas, "pointerdown", {
+      pointerId: 17,
+      pointerType: "mouse",
+      isPrimary: true,
+      button: 0,
+      buttons: 1,
+      clientX: 24,
+      clientY: 24,
+    });
+    expect(onPickCell).toHaveBeenCalledWith(0);
+    expect(controller.setHoveredCell).toHaveBeenLastCalledWith(0);
+
+    view.rerender(
+      <BeadThreePreview
+        project={updatedProject}
+        ariaLabel="有即时反馈的三维预览"
+        createController={() => controller}
+        createSurfaceRenderer={() => renderer}
+        onPickCell={onPickCell}
+        allowDrag
+        translate={translateThreePreviewControls}
+      />,
+    );
+    expect(
+      screen.getByRole("status", { name: "Updating 3D preview…" }),
+    ).toBeVisible();
+    expect(controller.update).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120);
+      updatedPending.resolve(makeSurfacePaths("rgb(20,120,210)"));
+      await updatedPending.promise;
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(controller.update).toHaveBeenCalledTimes(2);
   });
 
   it("ignores a superseded surface result before starting the latest project", async () => {

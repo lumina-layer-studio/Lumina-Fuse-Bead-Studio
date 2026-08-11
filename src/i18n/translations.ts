@@ -123,6 +123,7 @@ const zhCN = {
   "workshop.bead.threeFallbackCanvas": "拼豆二维压合预览（3D 安全降级）",
   "workshop.bead.threeHint":
     "默认顶视与 2D 方向一致。编辑模式用左键或单指使用当前工具；视角模式可直接拖动查看，也可用右键或 Alt+左键旋转、中键平移、滚轮缩放。3D 与压合预览使用同一套融合规则，并显示豆板。",
+  "workshop.bead.threeRendering": "正在更新 3D 预览…",
   "workshop.bead.threeLimitHint":
     "当前图案有 {count} 颗豆，超过 {limit} 颗的交互式 3D 安全上限；已显示同规则的 2D 压合预览。",
   "workshop.bead.originalCanvas": "拼豆图纸原图",
@@ -317,6 +318,7 @@ const enUS = {
     "2D pressure preview (3D safety fallback)",
   "workshop.bead.threeHint":
     "The default top view matches the 2D orientation. In Edit mode, use left click or one finger with the current tool. In View mode, drag to navigate, or use right drag or Alt+left to rotate, middle drag to pan, and the wheel to zoom. 3D uses the same fusion rules as the pressure preview and shows the pegboard.",
+  "workshop.bead.threeRendering": "Updating 3D preview…",
   "workshop.bead.threeLimitHint":
     "This pattern contains {count} beads, above the {limit}-bead interactive 3D safety limit. The matching 2D pressure preview is shown instead.",
   "workshop.bead.originalCanvas": "Original bead pattern",

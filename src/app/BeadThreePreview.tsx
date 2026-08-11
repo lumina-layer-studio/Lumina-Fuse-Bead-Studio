@@ -591,6 +591,15 @@ export function BeadThreePreview({
         onContextMenu={(event) => event.preventDefault()}
         style={{ display: "block", width: "100%", height: "100%" }}
       />
+      {rendering ? (
+        <span
+          role="status"
+          aria-label={translate("workshop.bead.threeRendering")}
+          className="bead-three-preview__rendering-status"
+        >
+          {translate("workshop.bead.threeRendering")}
+        </span>
+      ) : null}
       <div
         role="toolbar"
         aria-label={translate("workshop.bead.viewport.threeToolbar")}
