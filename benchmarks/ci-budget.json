@@ -5,6 +5,8 @@
   "peakTransferredBytes": 100000000,
   "releasedWorkerCount": 1,
   "releasedBlobUrlCount": 1,
+  "fastPreview3532Ms": 8,
+  "fastPreview16384Ms": 25,
   "svgPreview911Ms": 250,
   "svgPreview3532Ms": 500,
   "fusionSurface911Ms": 750,

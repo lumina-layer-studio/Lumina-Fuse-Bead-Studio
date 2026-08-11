@@ -9,24 +9,51 @@ const jsonFlagIndex = process.argv.indexOf("--json");
 const outputPath =
   jsonFlagIndex >= 0 ? process.argv[jsonFlagIndex + 1] : null;
 
+const BENCHMARK_PALETTE = [
+  [231, 61, 78],
+  [51, 126, 224],
+  [246, 185, 40],
+  [49, 173, 116],
+];
+
 function makeProject(createBeadProject, rows, columns) {
-  const palette = [
-    [231, 61, 78],
-    [51, 126, 224],
-    [246, 185, 40],
-    [49, 173, 116],
-  ];
   return createBeadProject({
     projectId: `benchmark-${rows}x${columns}`,
     moduleVersion: "1.0.0",
     now: "2030-01-01T00:00:00.000Z",
     rows,
     columns,
-    palette,
+    palette: BENCHMARK_PALETTE,
     cells: Array.from({ length: rows * columns }, (_, index) =>
       index % 13 === 0
         ? { kind: "empty" }
-        : { kind: "color", paletteIndex: index % palette.length },
+        : {
+            kind: "color",
+            paletteIndex: index % BENCHMARK_PALETTE.length,
+          },
+    ),
+  });
+}
+
+function makeSparseSlotCapacityProject(createBeadProject) {
+  const rows = 128;
+  const columns = 128;
+  return createBeadProject({
+    projectId: "benchmark-fast-128x128",
+    moduleVersion: "1.0.0",
+    now: "2030-01-01T00:00:00.000Z",
+    rows,
+    columns,
+    palette: BENCHMARK_PALETTE,
+    compression: 83,
+    irregularity: 45,
+    cells: Array.from({ length: rows * columns }, (_, index) =>
+      index % 4 === 0
+        ? {
+            kind: "color",
+            paletteIndex: index % BENCHMARK_PALETTE.length,
+          }
+        : { kind: "empty" },
     ),
   });
 }
@@ -35,6 +62,20 @@ function elapsed(action) {
   const started = performance.now();
   const value = action();
   return { value, milliseconds: performance.now() - started };
+}
+
+function warmMedianMilliseconds(
+  action,
+  { warmupIterations = 3, measuredIterations = 9 } = {},
+) {
+  for (let index = 0; index < warmupIterations; index += 1) action();
+
+  const samples = [];
+  for (let index = 0; index < measuredIterations; index += 1) {
+    samples.push(elapsed(action).milliseconds);
+  }
+  samples.sort((left, right) => left - right);
+  return samples[Math.floor(samples.length / 2)];
 }
 
 function geometryBytes(geometry) {
@@ -73,8 +114,12 @@ try {
   } = await server.ssrLoadModule(
     "/src/domain/svgRenderer.ts",
   );
-  const { buildPhysicalPreviewModel } = await server.ssrLoadModule(
-    "/src/domain/physicalPreviewModel.ts",
+  const {
+    buildPhysicalPreviewLayout,
+    buildPhysicalPreviewModel,
+  } = await server.ssrLoadModule("/src/domain/physicalPreviewModel.ts");
+  const { buildFastBeadPreviewModel } = await server.ssrLoadModule(
+    "/src/domain/fastPreviewModel.ts",
   );
   const { buildBeadPreviewSurfaceGeometry } = await server.ssrLoadModule(
     "/src/app/beadThreePreviewController.ts",
@@ -92,7 +137,7 @@ try {
         : { kind: "color", paletteIndex: index % 4 },
     ),
   };
-  const svgPreview3532Project = {
+  const realistic3532Project = {
     ...makeProject(createBeadProject, 64, 69),
     projectId: "benchmark-svg-64x69",
     compression: 83,
@@ -107,6 +152,15 @@ try {
     createBeadProject,
     128,
     128,
+  );
+  const fastPreview16384Project = makeSparseSlotCapacityProject(
+    createBeadProject,
+  );
+  const fastPreview3532Layout = buildPhysicalPreviewLayout(
+    realistic3532Project,
+  );
+  const fastPreview16384Layout = buildPhysicalPreviewLayout(
+    fastPreview16384Project,
   );
 
   // Warm the transform and JIT paths before measuring.
@@ -126,7 +180,7 @@ try {
     compression: 83,
     irregularity: 45,
   });
-  buildPhysicalPreviewModel(svgPreview3532Project, []);
+  buildPhysicalPreviewModel(realistic3532Project, []);
   buildPhysicalPreviewModel(physicalPreview16384Project, []);
 
   const preview = elapsed(() =>
@@ -150,22 +204,35 @@ try {
     buildBeadFusionPreviewSvg(svgPreview911Project),
   );
   const svgPreview3532 = elapsed(() =>
-    buildBeadFusionPreviewSvg(svgPreview3532Project),
+    buildBeadFusionPreviewSvg(realistic3532Project),
   );
   const fusionSurface911 = elapsed(() =>
     buildBeadFusionSurfacePaths(svgPreview911Project),
   );
   const fusionSurface3532 = elapsed(() =>
-    buildBeadFusionSurfacePaths(svgPreview3532Project),
+    buildBeadFusionSurfacePaths(realistic3532Project),
   );
   const physicalPreview3532 = elapsed(() =>
     buildPhysicalPreviewModel(
-      svgPreview3532Project,
+      realistic3532Project,
       fusionSurface3532.value,
     ),
   );
   const physicalPreview16384 = elapsed(() =>
     buildPhysicalPreviewModel(physicalPreview16384Project, []),
+  );
+  // CPU-only fast-model hot path: layout creation is cached by the controller.
+  const fastPreview3532Ms = warmMedianMilliseconds(() =>
+    buildFastBeadPreviewModel(
+      realistic3532Project,
+      fastPreview3532Layout,
+    ),
+  );
+  const fastPreview16384Ms = warmMedianMilliseconds(() =>
+    buildFastBeadPreviewModel(
+      fastPreview16384Project,
+      fastPreview16384Layout,
+    ),
   );
   const threeGeometry3532 = elapsed(() =>
     physicalPreview3532.value.surfacePaths.flatMap((surfacePath) => {
@@ -183,7 +250,11 @@ try {
   for (const geometry of threeGeometry3532.value) geometry.dispose();
 
   const result = {
-    schemaVersion: 5,
+    schemaVersion: 6,
+    fastPreviewBenchmarkKind:
+      "cpu-pure-model-reused-layout-warm-median",
+    fastPreview3532Ms: Number(fastPreview3532Ms.toFixed(3)),
+    fastPreview16384Ms: Number(fastPreview16384Ms.toFixed(3)),
     preview52Ms: Number(preview.milliseconds.toFixed(3)),
     full104Ms: Number(full.milliseconds.toFixed(3)),
     mainThreadMaxSliceMs: Number(transfer.milliseconds.toFixed(3)),

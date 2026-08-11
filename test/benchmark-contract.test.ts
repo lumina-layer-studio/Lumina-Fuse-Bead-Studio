@@ -6,6 +6,8 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const THREE_PREVIEW_METRICS = [
+  "fastPreview3532Ms",
+  "fastPreview16384Ms",
   "fusionSurface911Ms",
   "fusionSurface3532Ms",
   "threeGeometry3532Ms",
@@ -15,7 +17,7 @@ const THREE_PREVIEW_METRICS = [
 ] as const;
 
 describe("benchmark contract", () => {
-  it("reports budgeted fusion-surface and 3D-geometry costs", async () => {
+  it("reports budgeted fast, fusion-surface, and 3D-geometry costs", async () => {
     const execution = spawnSync(
       process.execPath,
       ["scripts/benchmark.mjs", "--check-regression"],
