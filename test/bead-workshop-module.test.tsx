@@ -446,6 +446,9 @@ describe("BeadWorkshopModule", () => {
     expect(
       await screen.findByRole("button", { name: "选择拼豆图纸" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "选择拼豆图纸" }).closest("main"),
+    ).not.toHaveClass("module-shell--editor");
     fireEvent.click(
       screen.getByRole("button", { name: "选择拼豆图纸" }),
     );
@@ -463,6 +466,13 @@ describe("BeadWorkshopModule", () => {
     expect(
       await screen.findByRole("heading", { name: "编辑拼豆矩阵" }),
     ).toBeInTheDocument();
+    const editorShell = screen
+      .getByRole("heading", { name: "编辑拼豆矩阵" })
+      .closest("main");
+    expect(editorShell).toHaveClass("module-shell--editor");
+    expect(editorShell?.querySelector(".workbench-stack")).toHaveClass(
+      "workbench-stack--editor",
+    );
     await waitFor(() => {
       expect(harness.savedProjects().length).toBeGreaterThan(0);
     });

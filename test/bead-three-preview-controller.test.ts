@@ -1,7 +1,11 @@
 import {
+  BufferGeometry,
   ExtrudeGeometry,
   InstancedMesh,
+  LineBasicMaterial,
+  LineLoop,
   Mesh,
+  MOUSE,
   Scene,
   Vector3,
 } from "three";
@@ -13,6 +17,11 @@ import type { PhysicalPreviewModel } from "../src/domain/physicalPreviewModel";
 const capturedControls = vi.hoisted(() => [] as Array<{
   camera: import("three").PerspectiveCamera;
   target: import("three").Vector3;
+  mouseButtons: {
+    LEFT: number;
+    MIDDLE: number;
+    RIGHT: number;
+  };
 }>);
 
 vi.mock("three", async (importOriginal) => {
@@ -40,6 +49,11 @@ vi.mock("three/examples/jsm/controls/OrbitControls.js", () => {
     enablePan = false;
     minDistance = 0;
     maxDistance = Infinity;
+    readonly mouseButtons = {
+      LEFT: MOUSE.ROTATE,
+      MIDDLE: MOUSE.DOLLY,
+      RIGHT: MOUSE.PAN,
+    };
     readonly addEventListener = vi.fn();
     readonly removeEventListener = vi.fn();
     readonly update = vi.fn(() => {
@@ -49,7 +63,11 @@ vi.mock("three/examples/jsm/controls/OrbitControls.js", () => {
     readonly dispose = vi.fn();
 
     constructor(private readonly camera: import("three").PerspectiveCamera) {
-      capturedControls.push({ camera, target: this.target });
+      capturedControls.push({
+        camera,
+        target: this.target,
+        mouseButtons: this.mouseButtons,
+      });
     }
   }
 
@@ -126,6 +144,66 @@ function projectBoundingBox(
         ).project(camera),
       ),
     ),
+  );
+}
+
+function setCanvasRect(
+  canvas: HTMLCanvasElement,
+  rect: { left: number; top: number; width: number; height: number },
+): void {
+  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+    ...rect,
+    bottom: rect.top + rect.height,
+    right: rect.left + rect.width,
+    x: rect.left,
+    y: rect.top,
+    toJSON: () => ({}),
+  });
+}
+
+function projectToClient(
+  camera: import("three").PerspectiveCamera,
+  canvas: HTMLCanvasElement,
+  worldPoint: Vector3,
+): { clientX: number; clientY: number } {
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  const projected = worldPoint.clone().project(camera);
+  const rect = canvas.getBoundingClientRect();
+  return {
+    clientX: rect.left + (projected.x + 1) * rect.width / 2,
+    clientY: rect.top + (1 - projected.y) * rect.height / 2,
+  };
+}
+
+function makeGridModel(rows: number, columns: number): PhysicalPreviewModel {
+  const pitchMm = 2.6;
+  const model = makeModel(
+    rows * columns,
+    columns * pitchMm,
+    rows * pitchMm,
+  );
+  return {
+    ...model,
+    board: {
+      ...model.board,
+      pegs: model.board.pegs.map((peg, cellIndex) => ({
+        ...peg,
+        xMm: (cellIndex % columns - (columns - 1) / 2) * pitchMm,
+        zMm: (Math.floor(cellIndex / columns) - (rows - 1) / 2) * pitchMm,
+      })),
+    },
+  };
+}
+
+function cellCenter(model: PhysicalPreviewModel, cellIndex: number): Vector3 {
+  const columns = Math.round(model.widthMm / model.beadPitchMm);
+  const row = Math.floor(cellIndex / columns);
+  const column = cellIndex % columns;
+  return new Vector3(
+    (column + 0.5) * model.beadPitchMm - model.widthMm / 2,
+    Math.max(model.heightMm, model.board.pegHeightMm),
+    (row + 0.5) * model.beadPitchMm - model.depthMm / 2,
   );
 }
 
@@ -277,6 +355,44 @@ describe("beadThreePreviewController resource lifecycle", () => {
     controller.dispose();
   });
 
+  it.each([
+    ["+Z", new Vector3(0, 0, 1)],
+    ["-Z", new Vector3(0, 0, -1)],
+  ])(
+    "keeps the full board framed when resizing from the exact %s side view",
+    (_label, viewDirection) => {
+      const controller = createBeadThreePreviewController(
+        document.createElement("canvas"),
+        vi.fn(),
+      );
+      const model = makeModel(4, 52, 26);
+      controller.resize(800, 400, 1);
+      controller.update(model);
+      const { camera, target } = capturedControls[0]!;
+      const startingDistance = 40;
+      camera.position
+        .copy(target)
+        .addScaledVector(viewDirection, startingDistance);
+
+      controller.resize(300, 600, 1);
+
+      const projectedCorners = projectBoundingBox(camera, model);
+      expect(camera.position.distanceTo(target)).toBeGreaterThan(
+        startingDistance,
+      );
+      expect(
+        Math.max(...projectedCorners.map((corner) => Math.abs(corner.x))),
+      ).toBeLessThanOrEqual(0.95);
+      expect(
+        Math.max(...projectedCorners.map((corner) => Math.abs(corner.y))),
+      ).toBeLessThanOrEqual(0.95);
+      expect(
+        camera.position.clone().sub(target).normalize().dot(viewDirection),
+      ).toBeCloseTo(1, 6);
+      controller.dispose();
+    },
+  );
+
   it("keeps every maximum-board bounding-box corner inside the padded frustum", () => {
     const model = makeMaximumSquareModel();
     for (const [width, height] of [
@@ -333,8 +449,10 @@ describe("beadThreePreviewController resource lifecycle", () => {
     const model = makeModel(4, 52, 26);
     controller.update(model);
     const { camera, target } = capturedControls[0]!;
-    camera.position.copy(target).add(new Vector3(300, 400, 500));
+    target.set(7, 3, -5);
+    camera.position.copy(target).add(new Vector3(3, 4, 5));
     const userPosition = camera.position.clone();
+    const userTarget = target.clone();
 
     controller.update({
       ...model,
@@ -346,6 +464,321 @@ describe("beadThreePreviewController resource lifecycle", () => {
     });
 
     expect(camera.position).toEqual(userPosition);
+    expect(target).toEqual(userTarget);
+    controller.dispose();
+  });
+
+  it("starts directly above the board with the SVG top edge facing screen up", () => {
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    controller.resize(640, 480, 1);
+    controller.update(makeModel(4, 52, 26));
+    const { camera, target } = capturedControls[0]!;
+
+    expect(camera.position.x).toBeCloseTo(target.x, 6);
+    expect(camera.position.y).toBeGreaterThan(target.y);
+    expect(camera.position.z).toBeCloseTo(target.z, 6);
+    expect(camera.up).toEqual(new Vector3(0, 0, -1));
+    controller.dispose();
+  });
+
+  it("zooms in and out around the current OrbitControls target", () => {
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    controller.resize(640, 480, 1);
+    controller.update(makeModel(4, 52, 26));
+    const { camera, target } = capturedControls[0]!;
+    const initialDistance = camera.position.distanceTo(target);
+
+    controller.zoomIn();
+    const zoomedInDistance = camera.position.distanceTo(target);
+    controller.zoomOut();
+
+    expect(zoomedInDistance).toBeLessThan(initialDistance);
+    expect(camera.position.distanceTo(target)).toBeCloseTo(
+      initialDistance,
+      6,
+    );
+    controller.dispose();
+  });
+
+  it("fits the current direction while recentering the latest model", () => {
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    controller.resize(640, 480, 1);
+    const model = makeModel(4, 52, 26);
+    controller.update(model);
+    const { camera, target } = capturedControls[0]!;
+    const userDirection = new Vector3(2, 3, 4).normalize();
+    target.set(12, 5, -8);
+    camera.position.copy(target).addScaledVector(userDirection, 10);
+
+    controller.fit();
+
+    expect(target.x).toBeCloseTo(0, 6);
+    expect(target.y).toBeCloseTo(
+      (-model.board.thicknessMm + model.heightMm) / 2,
+      6,
+    );
+    expect(target.z).toBeCloseTo(0, 6);
+    expect(
+      camera.position.clone().sub(target).normalize().dot(userDirection),
+    ).toBeCloseTo(1, 6);
+    controller.dispose();
+  });
+
+  it.each([
+    ["+Z", new Vector3(0, 0, 1)],
+    ["-Z", new Vector3(0, 0, -1)],
+  ])(
+    "keeps the full board framed from the exact %s side view",
+    (_label, viewDirection) => {
+      const controller = createBeadThreePreviewController(
+        document.createElement("canvas"),
+        vi.fn(),
+      );
+      controller.resize(640, 480, 1);
+      const model = makeModel(4, 52, 26);
+      controller.update(model);
+      const { camera, target } = capturedControls[0]!;
+      camera.position.copy(target).addScaledVector(viewDirection, 10);
+
+      controller.fit();
+
+      const projectedCorners = projectBoundingBox(camera, model);
+      expect(camera.position.distanceTo(target)).toBeGreaterThan(
+        model.board.widthMm / 2,
+      );
+      expect(
+        Math.max(...projectedCorners.map((corner) => Math.abs(corner.x))),
+      ).toBeLessThanOrEqual(0.95);
+      expect(
+        Math.max(...projectedCorners.map((corner) => Math.abs(corner.y))),
+      ).toBeLessThanOrEqual(0.95);
+      expect(
+        camera.position.clone().sub(target).normalize().dot(viewDirection),
+      ).toBeCloseTo(1, 6);
+      controller.dispose();
+    },
+  );
+
+  it("resets a moved camera to the canonical top view", () => {
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    controller.resize(640, 480, 1);
+    controller.update(makeModel(4, 52, 26));
+    const { camera, target } = capturedControls[0]!;
+    target.set(10, 20, 30);
+    camera.position.set(100, 80, 60);
+    camera.up.set(0, 1, 0);
+
+    controller.resetView();
+
+    expect(target.x).toBeCloseTo(0, 6);
+    expect(target.z).toBeCloseTo(0, 6);
+    expect(camera.position.x).toBeCloseTo(target.x, 6);
+    expect(camera.position.y).toBeGreaterThan(target.y);
+    expect(camera.position.z).toBeCloseTo(target.z, 6);
+    expect(camera.up).toEqual(new Vector3(0, 0, -1));
+    controller.dispose();
+  });
+
+  it("maps every corner cell from the default top view in constant-time grid space", () => {
+    const canvas = document.createElement("canvas");
+    setCanvasRect(canvas, { left: 0, top: 0, width: 600, height: 400 });
+    const controller = createBeadThreePreviewController(canvas, vi.fn());
+    const model = makeGridModel(3, 4);
+    controller.resize(600, 400, 1);
+    controller.update(model);
+    const { camera } = capturedControls[0]!;
+
+    for (const cellIndex of [0, 3, 8, 11]) {
+      const point = projectToClient(camera, canvas, cellCenter(model, cellIndex));
+      expect(controller.pickCellAt(point.clientX, point.clientY)).toBe(
+        cellIndex,
+      );
+    }
+    controller.dispose();
+  });
+
+  it("maps cells after OrbitControls rotates the camera", () => {
+    const canvas = document.createElement("canvas");
+    setCanvasRect(canvas, { left: 0, top: 0, width: 640, height: 480 });
+    const controller = createBeadThreePreviewController(canvas, vi.fn());
+    const model = makeGridModel(3, 4);
+    controller.resize(640, 480, 1);
+    controller.update(model);
+    const { camera, target } = capturedControls[0]!;
+    camera.position.copy(target).add(new Vector3(18, 24, 20));
+    camera.lookAt(target);
+    camera.updateMatrixWorld(true);
+
+    for (const cellIndex of [0, 6, 11]) {
+      const point = projectToClient(camera, canvas, cellCenter(model, cellIndex));
+      expect(controller.pickCellAt(point.clientX, point.clientY)).toBe(
+        cellIndex,
+      );
+    }
+    controller.dispose();
+  });
+
+  it("accounts for canvas page offsets when mapping client coordinates", () => {
+    const canvas = document.createElement("canvas");
+    setCanvasRect(canvas, { left: 137, top: 83, width: 720, height: 360 });
+    const controller = createBeadThreePreviewController(canvas, vi.fn());
+    const model = makeGridModel(2, 3);
+    controller.resize(720, 360, 1);
+    controller.update(model);
+    const { camera } = capturedControls[0]!;
+    const point = projectToClient(camera, canvas, cellCenter(model, 4));
+
+    expect(controller.pickCellAt(point.clientX, point.clientY)).toBe(4);
+    controller.dispose();
+  });
+
+  it("picks empty and holed cells from the logical grid instead of render meshes", () => {
+    const canvas = document.createElement("canvas");
+    setCanvasRect(canvas, { left: 0, top: 0, width: 500, height: 500 });
+    const controller = createBeadThreePreviewController(canvas, vi.fn());
+    const emptyModel = makeGridModel(3, 3);
+    emptyModel.surfacePaths = [];
+    controller.resize(500, 500, 1);
+    controller.update(emptyModel);
+    const { camera } = capturedControls[0]!;
+    let point = projectToClient(camera, canvas, cellCenter(emptyModel, 4));
+    expect(controller.pickCellAt(point.clientX, point.clientY)).toBe(4);
+
+    const holedModel = makeGridModel(3, 3);
+    holedModel.surfacePaths[0] = {
+      ...holedModel.surfacePaths[0]!,
+      d: "M 0 0 L 3 0 L 3 3 L 0 3 Z M 1 1 L 2 1 L 2 2 L 1 2 Z",
+    };
+    controller.update(holedModel);
+    point = projectToClient(camera, canvas, cellCenter(holedModel, 4));
+    expect(controller.pickCellAt(point.clientX, point.clientY)).toBe(4);
+    controller.dispose();
+  });
+
+  it("rejects board-margin hits outside the logical bead grid", () => {
+    const canvas = document.createElement("canvas");
+    setCanvasRect(canvas, { left: 0, top: 0, width: 600, height: 400 });
+    const controller = createBeadThreePreviewController(canvas, vi.fn());
+    const model = makeGridModel(2, 3);
+    controller.resize(600, 400, 1);
+    controller.update(model);
+    const { camera } = capturedControls[0]!;
+    const point = projectToClient(
+      camera,
+      canvas,
+      new Vector3(
+        model.widthMm / 2 + model.beadPitchMm * 0.4,
+        Math.max(model.heightMm, model.board.pegHeightMm),
+        0,
+      ),
+    );
+
+    expect(controller.pickCellAt(point.clientX, point.clientY)).toBeNull();
+    controller.dispose();
+  });
+
+  it("returns no cell before the first model update", () => {
+    const canvas = document.createElement("canvas");
+    setCanvasRect(canvas, { left: 0, top: 0, width: 600, height: 400 });
+    const controller = createBeadThreePreviewController(canvas, vi.fn());
+    controller.resize(600, 400, 1);
+
+    expect(controller.pickCellAt(300, 200)).toBeNull();
+    controller.setHoveredCell(0);
+    controller.setSelectedCell(0);
+    controller.dispose();
+  });
+
+  it("positions and hides preview-only hover and selection cell outlines", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const model = makeGridModel(2, 3);
+    controller.update(model);
+    const added = sceneAdd.mock.calls.flat();
+    const hoverMarker = added.find(
+      (object) => object.name === "bead-preview-hover-cell",
+    ) as LineLoop;
+    const selectedMarker = added.find(
+      (object) => object.name === "bead-preview-selected-cell",
+    ) as LineLoop;
+
+    expect(hoverMarker).toBeInstanceOf(LineLoop);
+    expect(selectedMarker).toBeInstanceOf(LineLoop);
+    expect(hoverMarker.visible).toBe(false);
+    expect(selectedMarker.visible).toBe(false);
+
+    controller.setHoveredCell(0);
+    controller.setSelectedCell(5);
+    expect(hoverMarker.visible).toBe(true);
+    expect(hoverMarker.position.x).toBeCloseTo(-model.beadPitchMm, 6);
+    expect(hoverMarker.position.z).toBeCloseTo(-model.beadPitchMm / 2, 6);
+    expect(selectedMarker.visible).toBe(true);
+    expect(selectedMarker.position.x).toBeCloseTo(model.beadPitchMm, 6);
+    expect(selectedMarker.position.z).toBeCloseTo(model.beadPitchMm / 2, 6);
+    expect(selectedMarker.position.y).toBeGreaterThan(
+      Math.max(model.heightMm, model.board.pegHeightMm),
+    );
+
+    controller.setHoveredCell(null);
+    controller.setSelectedCell(6);
+    expect(hoverMarker.visible).toBe(false);
+    expect(selectedMarker.visible).toBe(false);
+    controller.dispose();
+  });
+
+  it("disposes marker geometry and materials exactly once", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const markers = [...new Set(
+      sceneAdd.mock.calls
+        .flat()
+        .filter((object) =>
+          object.name === "bead-preview-hover-cell" ||
+          object.name === "bead-preview-selected-cell"),
+    )] as LineLoop[];
+    expect(markers).toHaveLength(2);
+    const geometrySpies = markers.map((marker) =>
+      vi.spyOn(marker.geometry as BufferGeometry, "dispose"));
+    const materialSpies = markers.map((marker) =>
+      vi.spyOn(marker.material as LineBasicMaterial, "dispose"));
+
+    controller.dispose();
+    controller.dispose();
+
+    for (const dispose of [...geometrySpies, ...materialSpies]) {
+      expect(dispose).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("reserves primary drag for editing while keeping mouse navigation", () => {
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+
+    expect(capturedControls[0]?.mouseButtons).toEqual({
+      LEFT: MOUSE.ROTATE,
+      MIDDLE: MOUSE.PAN,
+      RIGHT: MOUSE.ROTATE,
+    });
     controller.dispose();
   });
 

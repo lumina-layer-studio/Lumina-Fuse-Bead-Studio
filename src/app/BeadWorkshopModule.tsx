@@ -1185,8 +1185,16 @@ export function BeadWorkshopModule({
   };
 
   return (
-    <main className="module-shell">
-      <div className="workbench-stack">
+    <main
+      className={`module-shell${
+        stage === "editor" ? " module-shell--editor" : ""
+      }`}
+    >
+      <div
+        className={`workbench-stack${
+          stage === "editor" ? " workbench-stack--editor" : ""
+        }`}
+      >
         {visibleError ? (
           <StatusBanner tone="error">{visibleError}</StatusBanner>
         ) : null}

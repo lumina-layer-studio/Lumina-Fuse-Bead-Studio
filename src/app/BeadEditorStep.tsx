@@ -23,6 +23,7 @@ import {
   workstationInputClass,
 } from "../ui/panelPrimitives";
 import { BeadEditorWorkspace } from "./BeadEditorWorkspace";
+import { BeadCanvasViewport } from "./BeadCanvasViewport";
 import { BeadMatrixCanvas } from "./BeadMatrixCanvas";
 import { BeadFusionPreview } from "./BeadFusionPreview";
 import { BeadSourceCanvas } from "./BeadSourceCanvas";
@@ -687,23 +688,17 @@ export function BeadEditorStep({
             {t("workshop.bead.editorTitle")}
           </h1>
           <div className="canvas-stage">
-            {view === "original" && sourceRaster && sourceGeometry ? (
-              <BeadSourceCanvas
-                source={sourceRaster}
-                rows={project.rows}
-                columns={project.columns}
-                geometry={sourceGeometry}
-                ariaLabel={t("workshop.bead.originalCanvas")}
-              />
-            ) : view === "pressure" ? (
-              <BeadFusionPreview
-                project={displayProject}
-                ariaLabel={t("workshop.bead.pressureCanvas")}
-              />
-            ) : view === "three" ? (
+            {view === "three" ? (
               <div className="bead-three-preview-stack">
                 <BeadThreePreview
                   project={displayProject}
+                  translate={t}
+                  onPickCell={applyAt}
+                  allowDrag={
+                    state.activeTool === "paint" ||
+                    state.activeTool === "erase"
+                  }
+                  selectedCellIndex={state.selectedCellIndex}
                   ariaLabel={t(
                     supportsThreePreview
                       ? "workshop.bead.threeCanvas"
@@ -716,20 +711,58 @@ export function BeadEditorStep({
                     : interpolate(t("workshop.bead.threeLimitHint"), {
                         count: coloredBeadCount,
                         limit: MAX_THREE_PREVIEW_BEADS,
-                      })}
+                  })}
                 </p>
               </div>
             ) : (
-              <BeadMatrixCanvas
-                project={displayProject}
-                showGrid={showGrid}
-                selectedCellIndex={state.selectedCellIndex}
-                onPickCell={applyAt}
-                allowDrag={
-                  state.activeTool === "paint" || state.activeTool === "erase"
+              <BeadCanvasViewport
+                viewKey={view}
+                contentWidth={
+                  view === "original" && sourceRaster
+                    ? sourceRaster.width
+                    : project.columns * 12
                 }
-                ariaLabel={t("workshop.bead.matrixCanvas")}
-              />
+                contentHeight={
+                  view === "original" && sourceRaster
+                    ? sourceRaster.height
+                    : project.rows * 12
+                }
+                ariaLabel={t(
+                  view === "original"
+                    ? "workshop.bead.originalCanvas"
+                    : view === "pressure"
+                      ? "workshop.bead.pressureCanvas"
+                      : "workshop.bead.matrixCanvas",
+                )}
+                translate={t}
+              >
+                {view === "original" && sourceRaster && sourceGeometry ? (
+                  <BeadSourceCanvas
+                    source={sourceRaster}
+                    rows={project.rows}
+                    columns={project.columns}
+                    geometry={sourceGeometry}
+                    ariaLabel={t("workshop.bead.originalCanvas")}
+                  />
+                ) : view === "pressure" ? (
+                  <BeadFusionPreview
+                    project={displayProject}
+                    ariaLabel={t("workshop.bead.pressureCanvas")}
+                  />
+                ) : (
+                  <BeadMatrixCanvas
+                    project={displayProject}
+                    showGrid={showGrid}
+                    selectedCellIndex={state.selectedCellIndex}
+                    onPickCell={applyAt}
+                    allowDrag={
+                      state.activeTool === "paint" ||
+                      state.activeTool === "erase"
+                    }
+                    ariaLabel={t("workshop.bead.matrixCanvas")}
+                  />
+                )}
+              </BeadCanvasViewport>
             )}
           </div>
         </>

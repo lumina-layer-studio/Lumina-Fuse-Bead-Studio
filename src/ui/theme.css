@@ -101,6 +101,7 @@
 html,
 body,
 #root {
+  height: 100%;
   min-width: 320px;
   min-height: 100%;
   margin: 0;
@@ -147,11 +148,36 @@ select:focus-visible,
   padding: clamp(14px, 2vw, 28px);
 }
 
+.module-shell--editor {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
 .workbench-stack {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 18px;
+}
+
+.workbench-stack--editor {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  gap: 0;
+}
+
+.workbench-stack--editor > .status-banner {
+  position: absolute;
+  top: 68px;
+  left: 50%;
+  z-index: 20;
+  max-width: min(420px, calc(100% - 24px));
+  box-shadow: var(--bead-shadow);
+  transform: translateX(-50%);
 }
 
 .workbench-layout {
@@ -440,10 +466,8 @@ select:focus-visible,
 
 .print-mapping-list {
   display: flex;
-  max-height: 240px;
   flex-direction: column;
   gap: 8px;
-  overflow: auto;
   border-block: 1px solid var(--bead-border);
   padding-block: 10px;
 }
@@ -545,38 +569,96 @@ select:focus-visible,
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
 }
 
+.bead-canvas-viewport__content > .bead-canvas,
+.bead-canvas-viewport__content > .bead-fusion-preview {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+}
+
+.bead-canvas-viewport__toolbar {
+  max-width: calc(100% - 24px);
+  overflow-x: auto;
+  border: 1px solid var(--bead-border);
+  border-radius: 999px;
+  box-shadow: var(--bead-shadow);
+  backdrop-filter: blur(14px);
+}
+
 .bead-three-preview-stack {
+  position: relative;
   display: flex;
   width: 100%;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
 }
 
 .bead-three-preview {
   width: 100%;
-  height: clamp(320px, 58vh, 680px);
+  height: 100%;
+  min-height: 0;
+  flex: 1;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--bead-border) 76%, var(--bead-accent));
-  border-radius: 12px;
+  border: 0;
+  border-radius: 0;
   background: color-mix(in srgb, var(--bead-surface-strong) 88%, var(--bead-accent));
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--bead-text) 12%, transparent);
+  box-shadow: none;
 }
 
 .bead-three-preview canvas {
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+.bead-three-preview[data-interaction-mode="edit"] canvas {
+  cursor: crosshair;
+}
+
+.bead-three-preview[data-interaction-mode="view"] canvas {
   cursor: grab;
 }
 
-.bead-three-preview canvas:active {
+.bead-three-preview[data-interaction-mode="view"] canvas:active {
   cursor: grabbing;
 }
 
+.bead-three-preview__mode-switch {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  border-right: 1px solid var(--bead-border);
+  padding-right: 8px;
+}
+
+.bead-three-preview__mode-switch > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.bead-three-preview__toolbar {
+  max-width: calc(100% - 24px);
+  overflow-x: auto;
+}
+
 .bead-three-preview__hint {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  max-width: min(32rem, calc(100% - 24px));
   margin: 0;
+  border: 1px solid var(--bead-border);
+  border-radius: 10px;
+  padding: 7px 10px;
   color: var(--bead-text-muted);
+  background: color-mix(in srgb, var(--bead-surface-strong) 92%, transparent);
+  box-shadow: var(--bead-shadow);
   font-size: 0.75rem;
   line-height: 1.5;
 }
@@ -704,12 +786,14 @@ select:focus-visible,
 .bead-editor-workspace {
   container: bead-editor-workspace / inline-size;
   position: relative;
+  width: 100%;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   isolation: isolate;
-  min-height: clamp(620px, calc(100dvh - 56px), 920px);
   overflow: hidden;
-  border: 1px solid var(--bead-border);
-  border-radius: var(--bead-radius);
+  border: 0;
+  border-radius: 0;
   background: var(--bead-surface-muted);
   --bead-editor-dock-gap: 12px;
   --bead-editor-left-dock: clamp(248px, 24cqi, 320px);
@@ -737,6 +821,7 @@ select:focus-visible,
 .bead-editor-workspace__canvas > .canvas-stage {
   width: 100%;
   min-height: 100%;
+  overflow: hidden;
   border-radius: 0;
   padding: 68px calc(var(--bead-editor-right-dock) + 24px) 24px
     calc(var(--bead-editor-left-dock) + 24px);
@@ -791,7 +876,7 @@ select:focus-visible,
 
 .bead-editor-dock {
   position: absolute;
-  top: var(--bead-editor-dock-gap);
+  top: 68px;
   bottom: var(--bead-editor-dock-gap);
   z-index: 1;
   display: flex;
@@ -897,7 +982,7 @@ select:focus-visible,
 .bead-editor-workspace__magnifier {
   position: absolute;
   right: calc(var(--bead-editor-right-dock) + 24px);
-  bottom: 12px;
+  bottom: 100px;
   z-index: 4;
   pointer-events: auto;
 }
@@ -905,6 +990,16 @@ select:focus-visible,
 .bead-editor-workspace__magnifier > .magnifier {
   position: static;
   width: 180px;
+}
+
+@container bead-editor-workspace (max-width: 1100px) {
+  .bead-editor-workspace__views {
+    top: 68px;
+  }
+
+  .bead-editor-workspace__canvas > .canvas-stage {
+    padding-top: 124px;
+  }
 }
 
 @container bead-editor-workspace (max-width: 900px) {
@@ -916,7 +1011,7 @@ select:focus-visible,
   }
 
   .bead-editor-workspace__canvas > .canvas-stage {
-    padding: 68px 12px 72px;
+    padding: 124px 12px 72px;
   }
 
   .bead-editor-workspace__views {
@@ -986,7 +1081,7 @@ select:focus-visible,
   .bead-editor-workspace[data-mobile-drawer="closed"]
     .bead-editor-workspace__magnifier {
     right: 12px;
-    bottom: 72px;
+    bottom: 148px;
   }
 }
 
@@ -1006,14 +1101,8 @@ select:focus-visible,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .bead-editor-workspace[data-mobile-drawer="closed"]
-    .bead-editor-workspace__magnifier {
-    right: 12px;
-    left: 12px;
-  }
-
-  .bead-editor-workspace__magnifier > .magnifier {
-    width: 100%;
+  .bead-editor-workspace__magnifier {
+    display: none;
   }
 }
 /* end bead editor floating workspace */
@@ -1089,6 +1178,12 @@ select:focus-visible,
   pointer-events: none;
 }
 
+@media (max-width: 1100px) {
+  .workbench-stack--editor > .status-banner {
+    top: 124px;
+  }
+}
+
 @media (max-width: 860px) {
   .workbench-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -1104,7 +1199,7 @@ select:focus-visible,
 }
 
 @media (max-width: 520px) {
-  .module-shell {
+  .module-shell:not(.module-shell--editor) {
     padding: 12px;
   }
 

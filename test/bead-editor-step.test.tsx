@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -18,6 +19,9 @@ import { translate } from "../src/i18n/translations";
 
 const threePreviewCapture = vi.hoisted(() => ({
   project: null as ReturnType<typeof project> | null,
+  onPickCell: null as ((cellIndex: number) => void) | null,
+  allowDrag: null as boolean | null,
+  selectedCellIndex: null as number | null,
 }));
 
 vi.mock("../src/app/BeadThreePreview", () => ({
@@ -27,11 +31,20 @@ vi.mock("../src/app/BeadThreePreview", () => ({
   BeadThreePreview: ({
     project: previewProject,
     ariaLabel,
+    onPickCell,
+    allowDrag,
+    selectedCellIndex,
   }: {
     project: ReturnType<typeof project>;
     ariaLabel: string;
+    onPickCell?: (cellIndex: number) => void;
+    allowDrag?: boolean;
+    selectedCellIndex?: number | null;
   }) => {
     threePreviewCapture.project = previewProject;
+    threePreviewCapture.onPickCell = onPickCell ?? null;
+    threePreviewCapture.allowDrag = allowDrag ?? null;
+    threePreviewCapture.selectedCellIndex = selectedCellIndex ?? null;
     return <canvas role="img" aria-label={ariaLabel} />;
   },
 }));
@@ -75,6 +88,9 @@ function project() {
 describe("BeadEditorStep", () => {
   beforeEach(() => {
     threePreviewCapture.project = null;
+    threePreviewCapture.onPickCell = null;
+    threePreviewCapture.allowDrag = null;
+    threePreviewCapture.selectedCellIndex = null;
     vi.spyOn(
       HTMLCanvasElement.prototype,
       "getContext",
@@ -176,7 +192,7 @@ describe("BeadEditorStep", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "拖动旋转、滚轮缩放；3D 与压合预览使用同一套挤压规则，并额外显示成品厚度、豆板和定位柱。",
+        "默认顶视与 2D 方向一致。编辑模式用左键或单指使用当前工具；视角模式可直接拖动查看，也可用右键或 Alt+左键旋转、中键平移、滚轮缩放。3D 与压合预览使用同一套融合规则，并显示豆板。",
       ),
     ).toBeInTheDocument();
     expect(threePreviewCapture.project?.palette).toEqual([
@@ -184,6 +200,139 @@ describe("BeadEditorStep", () => {
       [44, 55, 66],
     ]);
   });
+
+  it("routes 3D picks through the latest tool and source palette while keeping the 3D view active", () => {
+    const actions = vi.fn<(action: BeadEditorAction) => void>();
+
+    function Harness() {
+      const [state, reducerDispatch] = useReducer(
+        beadEditorReducer,
+        createBeadEditorState(project()),
+      );
+      const dispatch = (action: BeadEditorAction) => {
+        actions(action);
+        reducerDispatch(action);
+      };
+      return (
+        <>
+          <BeadEditorStep
+            state={state}
+            sourceRaster={null}
+            translate={t}
+            dispatch={dispatch}
+            onNewProject={vi.fn()}
+            displayPalette={[
+              [11, 22, 33],
+              [44, 55, 66],
+            ]}
+          />
+          <output data-testid="active-palette">
+            {state.activePaletteIndex}
+          </output>
+          <output data-testid="selected-cell">
+            {state.selectedCellIndex ?? "none"}
+          </output>
+          <output data-testid="first-cell-kind">
+            {state.present.cells[0].kind}
+          </output>
+        </>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "3D 预览" }));
+
+    const initialPick = threePreviewCapture.onPickCell;
+    expect(initialPick).toEqual(expect.any(Function));
+    expect(threePreviewCapture.allowDrag).toBe(true);
+    expect(threePreviewCapture.project?.palette).toEqual([
+      [11, 22, 33],
+      [44, 55, 66],
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "颜色 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "填充" }));
+    expect(screen.getByTestId("active-palette")).toHaveTextContent("1");
+    expect(threePreviewCapture.onPickCell).not.toBe(initialPick);
+    expect(threePreviewCapture.allowDrag).toBe(false);
+
+    actions.mockClear();
+    act(() => threePreviewCapture.onPickCell?.(0));
+
+    expect(actions).toHaveBeenCalledTimes(1);
+    expect(actions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "apply-tool",
+        tool: "fill",
+        paletteIndex: 1,
+        cellIndex: 0,
+      }),
+    );
+    expect(screen.getByTestId("first-cell-kind")).toHaveTextContent(
+      "color",
+    );
+    expect(screen.getByTestId("selected-cell")).toHaveTextContent("0");
+    expect(threePreviewCapture.selectedCellIndex).toBe(0);
+    expect(
+      screen.getByRole("img", { name: "可旋转的拼豆 3D 预览" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "选中格局部放大" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    expect(screen.getByTestId("first-cell-kind")).toHaveTextContent(
+      "empty",
+    );
+    expect(
+      screen.getByRole("img", { name: "可旋转的拼豆 3D 预览" }),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["paint", true],
+    ["erase", true],
+    ["eraseFill", false],
+    ["eyedropper", false],
+    ["fill", false],
+  ] as const)(
+    "passes the %s drag contract and selected cell to the 3D preview",
+    (activeTool, expectedAllowDrag) => {
+      const baseState = createBeadEditorState(project());
+      const { rerender } = render(
+        <BeadEditorStep
+          state={{
+            ...baseState,
+            activeTool,
+            selectedCellIndex: 3,
+          }}
+          sourceRaster={null}
+          translate={t}
+          dispatch={vi.fn()}
+          onNewProject={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "3D 预览" }));
+
+      expect(threePreviewCapture.allowDrag).toBe(expectedAllowDrag);
+      expect(threePreviewCapture.selectedCellIndex).toBe(3);
+
+      rerender(
+        <BeadEditorStep
+          state={{
+            ...baseState,
+            activeTool,
+            selectedCellIndex: 0,
+          }}
+          sourceRaster={null}
+          translate={t}
+          dispatch={vi.fn()}
+          onNewProject={vi.fn()}
+        />,
+      );
+      expect(threePreviewCapture.selectedCellIndex).toBe(0);
+    },
+  );
 
   it("hosts the editor in one workspace while dock presentation stays outside business dispatch", () => {
     const state = createBeadEditorState(project());
@@ -231,6 +380,102 @@ describe("BeadEditorStep", () => {
       screen.getByRole("button", { name: "画笔" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("keeps one zoomable viewport while switching among the three 2D views", () => {
+    vi.spyOn(
+      HTMLElement.prototype,
+      "getBoundingClientRect",
+    ).mockImplementation(function getBoundingClientRect(
+      this: HTMLElement,
+    ) {
+      if (
+        this.getAttribute("data-testid") ===
+        "bead-canvas-viewport-surface"
+      ) {
+        return {
+          x: 0,
+          y: 0,
+          top: 0,
+          right: 800,
+          bottom: 600,
+          left: 0,
+          width: 800,
+          height: 600,
+          toJSON: () => undefined,
+        } as DOMRect;
+      }
+      return {
+        x: 0,
+        y: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        width: 0,
+        height: 0,
+        toJSON: () => undefined,
+      } as DOMRect;
+    });
+    const state = createBeadEditorState(project());
+    render(
+      <BeadEditorStep
+        state={state}
+        sourceRaster={{
+          width: 320,
+          height: 240,
+          data: new Uint8ClampedArray(320 * 240 * 4),
+        }}
+        translate={t}
+        dispatch={vi.fn()}
+        onNewProject={vi.fn()}
+      />,
+    );
+
+    const matrixViewport = screen.getByTestId("bead-canvas-viewport");
+    expect(
+      screen.getByTestId("bead-canvas-viewport-content"),
+    ).toHaveStyle({ width: "24px", height: "24px" });
+    expect(
+      screen.getByRole("toolbar", { name: "画布缩放" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "重置为 100%" }),
+    );
+    expect(
+      screen.getByRole("status", { name: "当前缩放：100%" }),
+    ).toHaveTextContent("100%");
+
+    fireEvent.click(screen.getByRole("button", { name: "原图" }));
+    expect(screen.getByTestId("bead-canvas-viewport")).toBe(
+      matrixViewport,
+    );
+    expect(
+      screen.getByTestId("bead-canvas-viewport-content"),
+    ).toHaveStyle({ width: "320px", height: "240px" });
+    expect(
+      screen.getByRole("status", { name: "当前缩放：250%" }),
+    ).toHaveTextContent("250%");
+
+    fireEvent.click(screen.getByRole("button", { name: "识别矩阵" }));
+    expect(
+      screen.getByRole("status", { name: "当前缩放：100%" }),
+    ).toHaveTextContent("100%");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "压合预览" }),
+    );
+    expect(screen.getByTestId("bead-canvas-viewport")).toBe(
+      matrixViewport,
+    );
+    expect(
+      screen.getByTestId("bead-canvas-viewport-content"),
+    ).toHaveStyle({ width: "24px", height: "24px" });
+
+    fireEvent.click(screen.getByRole("button", { name: "3D 预览" }));
+    expect(
+      screen.queryByTestId("bead-canvas-viewport"),
+    ).not.toBeInTheDocument();
   });
 
   it("preserves the pressure view while the inspector dock collapses and expands", () => {
