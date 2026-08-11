@@ -41,6 +41,18 @@ export interface PhysicalPreviewModel {
   board: PhysicalPreviewBoard;
 }
 
+/**
+ * Reusable physical dimensions for exact and fast bead preview models.
+ * 可供精确与快速拼豆预览模型复用的物理尺寸。
+ */
+export interface PhysicalPreviewLayout {
+  widthMm: number;
+  depthMm: number;
+  heightMm: number;
+  beadPitchMm: number;
+  board: PhysicalPreviewBoard;
+}
+
 function buildPreviewBoard(project: BeadProject): PhysicalPreviewBoard {
   const marginMm = project.beadPitchMm * BOARD_MARGIN_RATIO;
   const widthMm = roundMillimeters(
@@ -85,13 +97,12 @@ function buildPreviewBoard(project: BeadProject): PhysicalPreviewBoard {
 }
 
 /**
- * Builds millimetre data for a canonical fused surface and preview-only board.
- * 生成标准压合表面与仅供预览使用的豆板毫米数据。
+ * Builds reusable millimetre layout data and the preview-only peg board.
+ * 构建可复用的毫米布局数据与仅供预览使用的插钉板。
  */
-export function buildPhysicalPreviewModel(
+export function buildPhysicalPreviewLayout(
   project: BeadProject,
-  surfacePaths: readonly BeadFusionSvgPath[],
-): PhysicalPreviewModel {
+): PhysicalPreviewLayout {
   const board = buildPreviewBoard(project);
   return {
     widthMm: roundMillimeters(
@@ -105,7 +116,20 @@ export function buildPhysicalPreviewModel(
       project.beadPitchMm,
     ),
     beadPitchMm: project.beadPitchMm,
-    surfacePaths: surfacePaths.map((path) => ({ ...path })),
     board,
+  };
+}
+
+/**
+ * Builds millimetre data for a canonical fused surface and preview-only board.
+ * 生成标准压合表面与仅供预览使用的豆板毫米数据。
+ */
+export function buildPhysicalPreviewModel(
+  project: BeadProject,
+  surfacePaths: readonly BeadFusionSvgPath[],
+): PhysicalPreviewModel {
+  return {
+    ...buildPhysicalPreviewLayout(project),
+    surfacePaths: surfacePaths.map((path) => ({ ...path })),
   };
 }

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { estimateBeadThicknessMm } from "../src/domain/beadThickness";
 import { buildBeadFusionGeometry } from "../src/domain/fusionGeometry";
-import { buildPhysicalPreviewModel } from "../src/domain/physicalPreviewModel";
+import {
+  buildPhysicalPreviewLayout,
+  buildPhysicalPreviewModel,
+} from "../src/domain/physicalPreviewModel";
 import { createBeadProject } from "../src/domain/project";
 import {
   buildBeadFusionSurfacePaths,
@@ -142,6 +145,25 @@ describe("canonical 3D preview surface", () => {
 });
 
 describe("physical 3D preview model", () => {
+  it("reuses the physical layout while cloning source surface paths", () => {
+    const project = makeProject();
+    const paths = buildBeadFusionSurfacePaths(project);
+    const layout = buildPhysicalPreviewLayout(project);
+    const model = buildPhysicalPreviewModel(project, paths);
+
+    expect({
+      widthMm: model.widthMm,
+      depthMm: model.depthMm,
+      heightMm: model.heightMm,
+      beadPitchMm: model.beadPitchMm,
+      board: model.board,
+    }).toEqual(layout);
+    expect(model.surfacePaths).not.toBe(paths);
+    expect(model.surfacePaths[0]).not.toBe(paths[0]);
+    paths[0].fill = "rgb(1,2,3)";
+    expect(model.surfacePaths[0].fill).toBe("rgb(240,50,70)");
+  });
+
   it("adds a preview-only board and every nominal peg without changing artwork dimensions", () => {
     const project = makeProject();
     const model = buildModel(project);

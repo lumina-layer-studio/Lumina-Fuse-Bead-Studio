@@ -6,6 +6,8 @@ const MAX_OWNERSHIP_BIAS = 0.045;
 const DEFAULT_SAMPLE_COUNT = 96;
 const MIN_SAMPLE_COUNT = 8;
 const MAX_SAMPLE_COUNT = 512;
+const INVALID_FUSION_PERCENTAGES_MESSAGE =
+  "Bead fusion compression and irregularity must be finite percentages.";
 
 interface GeometryCell {
   cellIndex: number;
@@ -46,8 +48,38 @@ export interface BeadFusionGeometry {
   holeRadius: number;
 }
 
+/**
+ * Shared normalized dimensions for exact and fast fused-bead previews.
+ * 精确与快速压合预览共用的标准化尺寸。
+ */
+export interface BeadFusionSharedProfile {
+  pressure: number;
+  outerRadius: number;
+  holeRadius: number;
+  contactReach: number;
+}
+
+/**
+ * Deterministic per-cell variation shared by exact and fast fused-bead previews.
+ * 精确与快速压合预览共用的确定性单格形变。
+ */
+export interface BeadFusionCellDeformation {
+  center: FusionPoint;
+  radiusXDelta: number;
+  radiusYDelta: number;
+}
+
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function assertFiniteFusionPercentages(
+  compression: number,
+  irregularity: number,
+): void {
+  if (!Number.isFinite(compression) || !Number.isFinite(irregularity)) {
+    throw new TypeError(INVALID_FUSION_PERCENTAGES_MESSAGE);
+  }
 }
 
 function smoothstep(edge0: number, edge1: number, value: number): number {
@@ -72,29 +104,6 @@ function signedCoordinateNoise(
   return (hash >>> 0) / 2147483647.5 - 1;
 }
 
-function centerFor(
-  cell: GeometryCell,
-  pressure: number,
-  irregularity: number,
-): FusionPoint {
-  const amount =
-    clamp01(irregularity) * smoothstep(0.08, 0.8, pressure);
-  return {
-    x:
-      cell.column +
-      0.5 +
-      signedCoordinateNoise(cell.row, cell.column, 0) *
-        MAX_IRREGULAR_OFFSET *
-        amount,
-    y:
-      cell.row +
-      0.5 +
-      signedCoordinateNoise(cell.row, cell.column, 1) *
-        MAX_IRREGULAR_OFFSET *
-        amount,
-  };
-}
-
 function ownershipBiasFor(
   cell: GeometryCell,
   pressure: number,
@@ -106,13 +115,6 @@ function ownershipBiasFor(
     clamp01(irregularity) *
     smoothstep(0.35, 1, pressure)
   );
-}
-
-function outerRadiusFor(pressure: number): number {
-  const fusedRadius = 0.47 + 0.03 * smoothstep(0, 1, pressure);
-  const packedRawBoost =
-    0.035 * (1 - smoothstep(0, 0.5, pressure));
-  return fusedRadius + packedRawBoost;
 }
 
 function contactHalfFor(
@@ -147,29 +149,80 @@ function boundaryContactHalfFor(pressure: number): number {
   );
 }
 
-function holeRadiusFor(pressure: number): number {
-  return pressure === 1
-    ? 0
-    : 0.2 * Math.pow(1 - pressure, 0.72);
-}
-
 function junctionRadiusFor(pressure: number): number {
   return pressure === 1
     ? 0
     : 0.085 * Math.sqrt(1 - pressure);
 }
 
-function contactReachFor(
-  pressure: number,
-  irregularity: number,
-): number {
-  return (
-    0.5 +
-    0.012 * smoothstep(0.08, 1, pressure) +
-    MAX_IRREGULAR_OFFSET *
-      clamp01(irregularity) *
-      smoothstep(0.08, 0.8, pressure)
-  );
+/**
+ * Resolves canonical radii and contact reach from project-facing percentages.
+ * 从项目百分比设置解析标准半径与接触范围。
+ */
+export function resolveBeadFusionSharedProfile(
+  compression: number,
+  irregularity = 0,
+): BeadFusionSharedProfile {
+  assertFiniteFusionPercentages(compression, irregularity);
+  const pressure = clamp01(compression / 100);
+  const normalizedIrregularity = clamp01(irregularity / 100);
+  const fusedRadius = 0.47 + 0.03 * smoothstep(0, 1, pressure);
+  const packedRawBoost =
+    0.035 * (1 - smoothstep(0, 0.5, pressure));
+  return {
+    pressure,
+    outerRadius: fusedRadius + packedRawBoost,
+    holeRadius:
+      pressure === 1 ? 0 : 0.2 * Math.pow(1 - pressure, 0.72),
+    contactReach:
+      0.5 +
+      0.012 * smoothstep(0.08, 1, pressure) +
+      MAX_IRREGULAR_OFFSET *
+        normalizedIrregularity *
+        smoothstep(0.08, 0.8, pressure),
+  };
+}
+
+/**
+ * Resolves deterministic cell centre and radius variation from project percentages.
+ * 从项目百分比设置解析确定性的单格中心与半径变化。
+ */
+export function resolveBeadFusionCellDeformation(
+  row: number,
+  column: number,
+  compression: number,
+  irregularity = 0,
+): BeadFusionCellDeformation {
+  const profile = resolveBeadFusionSharedProfile(compression, irregularity);
+  const normalizedIrregularity = clamp01(irregularity / 100);
+  const centerAmount =
+    normalizedIrregularity * smoothstep(0.08, 0.8, profile.pressure);
+  const shapeVariation =
+    normalizedIrregularity * smoothstep(0.22, 1, profile.pressure);
+  return {
+    center: {
+      x:
+        column +
+        0.5 +
+        signedCoordinateNoise(row, column, 0) *
+          MAX_IRREGULAR_OFFSET *
+          centerAmount,
+      y:
+        row +
+        0.5 +
+        signedCoordinateNoise(row, column, 1) *
+          MAX_IRREGULAR_OFFSET *
+          centerAmount,
+    },
+    radiusXDelta:
+      signedCoordinateNoise(row, column, 2) *
+      MAX_IRREGULAR_RADIUS_DELTA *
+      shapeVariation,
+    radiusYDelta:
+      signedCoordinateNoise(row, column, 3) *
+      MAX_IRREGULAR_RADIUS_DELTA *
+      shapeVariation,
+  };
 }
 
 function variedContactHalf(
@@ -323,6 +376,8 @@ function contourPoints(
   irregularity: number,
   lookup: ReadonlyMap<string, GeometryCell>,
   centers: ReadonlyMap<string, FusionPoint>,
+  deformations: ReadonlyMap<string, BeadFusionCellDeformation>,
+  profile: BeadFusionSharedProfile,
   columns: number,
   rows: number,
   sampleCount: number,
@@ -331,18 +386,15 @@ function contourPoints(
   if (!center) {
     throw new TypeError("Fusion contour centre is missing.");
   }
-  const radius = outerRadiusFor(pressure);
-  const shapeVariation =
-    clamp01(irregularity) * smoothstep(0.22, 1, pressure);
-  const radiusXDelta =
-    signedCoordinateNoise(cell.row, cell.column, 2) *
-    MAX_IRREGULAR_RADIUS_DELTA *
-    shapeVariation;
-  const radiusYDelta =
-    signedCoordinateNoise(cell.row, cell.column, 3) *
-    MAX_IRREGULAR_RADIUS_DELTA *
-    shapeVariation;
-  const contactReach = contactReachFor(pressure, irregularity);
+  const deformation = deformations.get(
+    coordinateKey(cell.row, cell.column),
+  );
+  if (!deformation) {
+    throw new TypeError("Fusion contour deformation is missing.");
+  }
+  const radius = profile.outerRadius;
+  const { radiusXDelta, radiusYDelta } = deformation;
+  const contactReach = profile.contactReach;
   const right = lookup.get(coordinateKey(cell.row, cell.column + 1));
   const left = lookup.get(coordinateKey(cell.row, cell.column - 1));
   const below = lookup.get(coordinateKey(cell.row + 1, cell.column));
@@ -564,7 +616,11 @@ export function buildBeadFusionGeometry(
       `Fusion contour sample count must be an integer from ${MIN_SAMPLE_COUNT} to ${MAX_SAMPLE_COUNT}.`,
     );
   }
-  const pressure = clamp01(compression / 100);
+  const profile = resolveBeadFusionSharedProfile(
+    compression,
+    irregularity,
+  );
+  const { pressure } = profile;
   const normalizedIrregularity = clamp01(irregularity / 100);
   const occupied: GeometryCell[] = project.cells.flatMap(
     (cell, cellIndex) =>
@@ -584,10 +640,21 @@ export function buildBeadFusionGeometry(
       cell,
     ]),
   );
-  const centers = new Map(
+  const deformations = new Map(
     occupied.map((cell) => [
       coordinateKey(cell.row, cell.column),
-      centerFor(cell, pressure, normalizedIrregularity),
+      resolveBeadFusionCellDeformation(
+        cell.row,
+        cell.column,
+        compression,
+        irregularity,
+      ),
+    ]),
+  );
+  const centers = new Map(
+    Array.from(deformations, ([key, deformation]) => [
+      key,
+      deformation.center,
     ]),
   );
   const contacts: BeadFusionContact[] = [];
@@ -669,6 +736,8 @@ export function buildBeadFusionGeometry(
         normalizedIrregularity,
         lookup,
         centers,
+        deformations,
+        profile,
         project.columns,
         project.rows,
         sampleCount,
@@ -677,7 +746,7 @@ export function buildBeadFusionGeometry(
     contacts,
     junctions,
     junctionRadius: junctionRadiusFor(pressure),
-    outerRadius: outerRadiusFor(pressure),
-    holeRadius: holeRadiusFor(pressure),
+    outerRadius: profile.outerRadius,
+    holeRadius: profile.holeRadius,
   };
 }

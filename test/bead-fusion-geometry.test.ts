@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildBeadFusionGeometry,
   pointInContour,
+  resolveBeadFusionCellDeformation,
+  resolveBeadFusionSharedProfile,
 } from "../src/domain/fusionGeometry";
 import { createBeadProject } from "../src/domain/project";
 import type { BeadCell, BeadProject } from "../src/domain/types";
@@ -32,6 +34,29 @@ const color = (paletteIndex = 0): BeadCell => ({
 });
 
 describe("boundary-aware bead fusion geometry", () => {
+  it("rejects non-finite public profile inputs before applying bounds", () => {
+    const invalidValues = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+    for (const value of invalidValues) {
+      expect(() => resolveBeadFusionSharedProfile(value, 50)).toThrowError(
+        new TypeError("Bead fusion compression and irregularity must be finite percentages."),
+      );
+      expect(() => resolveBeadFusionSharedProfile(50, value)).toThrowError(
+        new TypeError("Bead fusion compression and irregularity must be finite percentages."),
+      );
+      expect(() =>
+        resolveBeadFusionCellDeformation(0, 0, value, 50),
+      ).toThrowError(
+        new TypeError("Bead fusion compression and irregularity must be finite percentages."),
+      );
+      expect(() =>
+        resolveBeadFusionCellDeformation(0, 0, 50, value),
+      ).toThrowError(
+        new TypeError("Bead fusion compression and irregularity must be finite percentages."),
+      );
+    }
+  });
+
   it("packs zero-fusion cylinders into narrow contact without filling the four-bead gap", () => {
     const geometry = buildBeadFusionGeometry(
       project(1, 2, [color(), color()]),
