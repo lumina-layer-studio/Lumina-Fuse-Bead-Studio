@@ -1,6 +1,6 @@
 {
   "name": "@lumina-layer-studio/fuse-bead-studio",
-  "version": "1.0.8-dev.33",
+  "version": "1.0.8-dev.34",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.33.2",
