@@ -1,18 +1,35 @@
 import {
   BufferGeometry,
+  Color,
   ExtrudeGeometry,
   InstancedMesh,
   LineBasicMaterial,
   LineLoop,
+  Matrix4,
   Mesh,
+  MeshPhysicalMaterial,
   MOUSE,
+  Quaternion,
   Scene,
   Vector3,
 } from "three";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
 
 import { createBeadThreePreviewController } from "../src/app/beadThreePreviewController";
+import { BEAD_PLACEMENT_ANIMATION_MS } from "../src/app/beadFastPreviewLayer";
+import { buildPhysicalPreviewLayout } from "../src/domain/physicalPreviewModel";
 import type { PhysicalPreviewModel } from "../src/domain/physicalPreviewModel";
+import { createBeadProject } from "../src/domain/project";
+import type { BeadCell, BeadProject } from "../src/domain/types";
 
 const capturedControls = vi.hoisted(() => [] as Array<{
   camera: import("three").PerspectiveCamera;
@@ -24,6 +41,24 @@ const capturedControls = vi.hoisted(() => [] as Array<{
   };
 }>);
 
+const capturedRenderers = vi.hoisted(() => [] as Array<{
+  render: ReturnType<typeof vi.fn>;
+  dispose: ReturnType<typeof vi.fn>;
+}>);
+
+let nextAnimationFrameId = 1;
+let pendingAnimationFrames = new Map<number, FrameRequestCallback>();
+
+function flushFrame(timestamp: number): void {
+  const callbacks = [...pendingAnimationFrames.values()];
+  pendingAnimationFrames.clear();
+  for (const callback of callbacks) callback(timestamp);
+}
+
+function pendingFrameCount(): number {
+  return pendingAnimationFrames.size;
+}
+
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal<typeof import("three")>();
 
@@ -34,6 +69,10 @@ vi.mock("three", async (importOriginal) => {
     readonly setSize = vi.fn();
     readonly render = vi.fn();
     readonly dispose = vi.fn();
+
+    constructor() {
+      capturedRenderers.push(this);
+    }
   }
 
   return {
@@ -196,6 +235,85 @@ function makeGridModel(rows: number, columns: number): PhysicalPreviewModel {
   };
 }
 
+const EMPTY_CELL: BeadCell = { kind: "empty" };
+const RED_CELL: BeadCell = { kind: "color", paletteIndex: 0 };
+const BLUE_CELL: BeadCell = { kind: "color", paletteIndex: 1 };
+
+function makeProject(
+  cells: BeadCell[],
+  overrides: {
+    projectId?: string;
+    rows?: number;
+    columns?: number;
+    compression?: number;
+  } = {},
+): BeadProject {
+  const rows = overrides.rows ?? 1;
+  const columns = overrides.columns ?? cells.length;
+  return createBeadProject({
+    projectId: overrides.projectId ?? "controller-fast-preview-test",
+    moduleVersion: "1.0.8-dev.34",
+    now: "2026-08-12T00:00:00.000Z",
+    rows,
+    columns,
+    cells,
+    palette: [
+      [239, 56, 72],
+      [40, 114, 224],
+    ],
+    beadPitchMm: 2.6,
+    compression: overrides.compression ?? 65,
+    irregularity: 35,
+  });
+}
+
+function previewProject(
+  controller: ReturnType<typeof createBeadThreePreviewController>,
+  project: BeadProject,
+  revision: number,
+): void {
+  expect(controller.previewProject).toBeTypeOf("function");
+  controller.previewProject?.(project, revision);
+}
+
+function findNamedObject<T>(
+  sceneAdd: MockInstance<Scene["add"]>,
+  name: string,
+): T {
+  const object = sceneAdd.mock.calls
+    .flat()
+    .find((candidate) => candidate.name === name);
+  expect(object).toBeDefined();
+  return object as T;
+}
+
+function readInstanceScale(mesh: InstancedMesh, cellIndex: number): Vector3 {
+  const matrix = new Matrix4();
+  const position = new Vector3();
+  const rotation = new Quaternion();
+  const scale = new Vector3();
+  mesh.getMatrixAt(cellIndex, matrix);
+  matrix.decompose(position, rotation, scale);
+  return scale;
+}
+
+function readInstanceMatrix(mesh: InstancedMesh, cellIndex: number): Matrix4 {
+  const matrix = new Matrix4();
+  mesh.getMatrixAt(cellIndex, matrix);
+  return matrix;
+}
+
+function cellCenterForProject(project: BeadProject, cellIndex: number): Vector3 {
+  const layout = buildPhysicalPreviewLayout(project);
+  const row = Math.floor(cellIndex / project.columns);
+  const column = cellIndex % project.columns;
+  return new Vector3(
+    (column + 0.5) * project.beadPitchMm - layout.widthMm / 2,
+    Math.max(layout.heightMm, layout.board.pegHeightMm),
+    (row + 0.5) * project.beadPitchMm - layout.depthMm / 2,
+  );
+}
+
 function cellCenter(model: PhysicalPreviewModel, cellIndex: number): Vector3 {
   const columns = Math.round(model.widthMm / model.beadPitchMm);
   const row = Math.floor(cellIndex / columns);
@@ -210,8 +328,18 @@ function cellCenter(model: PhysicalPreviewModel, cellIndex: number): Vector3 {
 describe("beadThreePreviewController resource lifecycle", () => {
   beforeEach(() => {
     capturedControls.length = 0;
-    vi.stubGlobal("requestAnimationFrame", vi.fn(() => 41));
-    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    capturedRenderers.length = 0;
+    nextAnimationFrameId = 1;
+    pendingAnimationFrames = new Map();
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      const id = nextAnimationFrameId;
+      nextAnimationFrameId += 1;
+      pendingAnimationFrames.set(id, callback);
+      return id;
+    }));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn((id: number) => {
+      pendingAnimationFrames.delete(id);
+    }));
   });
 
   afterEach(() => {
@@ -766,6 +894,628 @@ describe("beadThreePreviewController resource lifecycle", () => {
     for (const dispose of [...geometrySpies, ...materialSpies]) {
       expect(dispose).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it("builds the board and logical picking before the first exact surface", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const canvas = document.createElement("canvas");
+    setCanvasRect(canvas, { left: 20, top: 30, width: 640, height: 480 });
+    const controller = createBeadThreePreviewController(canvas, vi.fn());
+    const project = makeProject(
+      [EMPTY_CELL, RED_CELL, BLUE_CELL, EMPTY_CELL],
+      { rows: 2, columns: 2 },
+    );
+    controller.resize(640, 480, 1);
+
+    previewProject(controller, project, 1);
+
+    const added = sceneAdd.mock.calls.flat();
+    expect(added.some((object) => object.name === "bead-preview-board")).toBe(true);
+    expect(added.some((object) => object.name === "bead-preview-pegs")).toBe(true);
+    expect(
+      added.some((object) => object.name.startsWith("bead-preview-surface-")),
+    ).toBe(false);
+    const { camera } = capturedControls[0]!;
+    const point = projectToClient(
+      camera,
+      canvas,
+      cellCenterForProject(project, 2),
+    );
+    expect(controller.pickCellAt(point.clientX, point.clientY)).toBe(2);
+    controller.dispose();
+  });
+
+  it("coalesces A B C previews into one fast mesh containing only C", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    previewProject(controller, makeProject([EMPTY_CELL, EMPTY_CELL]), 1);
+    previewProject(controller, makeProject([RED_CELL, EMPTY_CELL]), 2);
+    previewProject(controller, makeProject([RED_CELL, BLUE_CELL]), 3);
+
+    expect(
+      sceneAdd.mock.calls.flat().filter(
+        (object) => object.name === "bead-preview-fast-beads",
+      ),
+    ).toHaveLength(0);
+    expect(
+      sceneAdd.mock.calls.flat().filter(
+        (object) => object.name === "bead-preview-board",
+      ),
+    ).toHaveLength(1);
+    expect(
+      sceneAdd.mock.calls.flat().filter(
+        (object) => object.name === "bead-preview-pegs",
+      ),
+    ).toHaveLength(1);
+
+    flushFrame(10);
+
+    const fastMeshes = sceneAdd.mock.calls.flat().filter(
+      (object) => object.name === "bead-preview-fast-beads",
+    ) as InstancedMesh[];
+    expect(fastMeshes).toHaveLength(1);
+    expect(readInstanceScale(fastMeshes[0]!, 0).x).toBeGreaterThan(0);
+    expect(readInstanceScale(fastMeshes[0]!, 1).x).toBeGreaterThan(0);
+    const secondColor = new Color();
+    fastMeshes[0]!.getColorAt(1, secondColor);
+    const expectedColor = new Color().setStyle("rgb(40, 114, 224)");
+    expect(secondColor.r).toBeCloseTo(expectedColor.r, 6);
+    expect(secondColor.g).toBeCloseTo(expectedColor.g, 6);
+    expect(secondColor.b).toBeCloseTo(expectedColor.b, 6);
+    expect(capturedRenderers[0]?.render).toHaveBeenCalledTimes(1);
+    expect(pendingFrameCount()).toBe(0);
+    controller.dispose();
+  });
+
+  it("ignores negative and fractional revisions before building a preview", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const project = makeProject([RED_CELL]);
+
+    previewProject(controller, project, -1);
+    previewProject(controller, project, 0.5);
+
+    const addedNames = sceneAdd.mock.calls.flat().map((object) => object.name);
+    expect(addedNames).not.toContain("bead-preview-board");
+    expect(addedNames).not.toContain("bead-preview-pegs");
+    expect(addedNames).not.toContain("bead-preview-fast-beads");
+    expect(pendingFrameCount()).toBe(0);
+    controller.dispose();
+  });
+
+  it("ignores same revision paint and erase without changing fast exact state", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const initial = makeProject([RED_CELL, EMPTY_CELL], {
+      projectId: "accepted-project",
+    });
+    const exact = makeGridModel(1, 2);
+    exact.surfacePaths[0] = {
+      ...exact.surfacePaths[0]!,
+      d: "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+    };
+    previewProject(controller, initial, 1);
+    flushFrame(0);
+    controller.update(exact, 1);
+    flushFrame(1);
+    flushFrame(2);
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    const exactMesh = findNamedObject<Mesh>(
+      sceneAdd,
+      "bead-preview-surface-0",
+    );
+    const renderCount = capturedRenderers[0]!.render.mock.calls.length;
+    const acceptedFirstMatrix = readInstanceMatrix(fastMesh, 0);
+    const acceptedSecondMatrix = readInstanceMatrix(fastMesh, 1);
+    expect(acceptedFirstMatrix.elements[0]).toBeGreaterThan(0);
+    expect(acceptedSecondMatrix.elements[0]).toBe(0);
+    expect(acceptedSecondMatrix.elements[5]).toBe(0);
+    expect(acceptedSecondMatrix.elements[10]).toBe(0);
+    expect(fastMesh.visible).toBe(false);
+    expect(exactMesh.visible).toBe(true);
+    expect(pendingFrameCount()).toBe(0);
+
+    previewProject(
+      controller,
+      makeProject([RED_CELL, BLUE_CELL], { projectId: "rejected-paint" }),
+      1,
+    );
+    previewProject(
+      controller,
+      makeProject([EMPTY_CELL, EMPTY_CELL], { projectId: "rejected-erase" }),
+      1,
+    );
+    flushFrame(10);
+
+    expect(readInstanceMatrix(fastMesh, 0).elements).toEqual(
+      acceptedFirstMatrix.elements,
+    );
+    expect(readInstanceMatrix(fastMesh, 1).elements).toEqual(
+      acceptedSecondMatrix.elements,
+    );
+    expect(fastMesh.visible).toBe(false);
+    expect(exactMesh.visible).toBe(true);
+    expect(capturedRenderers[0]?.render).toHaveBeenCalledTimes(renderCount);
+    expect(
+      sceneAdd.mock.calls.flat().filter(
+        (object) => object.name === "bead-preview-fast-beads",
+      ),
+    ).toHaveLength(1);
+    expect(pendingFrameCount()).toBe(0);
+    controller.dispose();
+  });
+
+  it("shows the fast paint layer and hides the current exact surface", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const initial = makeProject([RED_CELL, EMPTY_CELL]);
+    const painted = makeProject([RED_CELL, BLUE_CELL]);
+    const exact = makeGridModel(1, 2);
+    exact.surfacePaths[0] = {
+      ...exact.surfacePaths[0]!,
+      d: "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+    };
+
+    previewProject(controller, initial, 1);
+    flushFrame(0);
+    controller.update(exact, 1);
+    flushFrame(1);
+    flushFrame(2);
+    const exactMesh = findNamedObject<Mesh>(
+      sceneAdd,
+      "bead-preview-surface-0",
+    );
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    expect(exactMesh.visible).toBe(true);
+    expect(fastMesh.visible).toBe(false);
+
+    previewProject(controller, painted, 2);
+    flushFrame(10);
+
+    expect(fastMesh.visible).toBe(true);
+    expect(exactMesh.visible).toBe(false);
+    expect(readInstanceScale(fastMesh, 1).x).toBeGreaterThan(0);
+    controller.dispose();
+  });
+
+  it("hands the latest fast revision to exact only after placement finishes", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const initial = makeProject([RED_CELL, EMPTY_CELL]);
+    const painted = makeProject([RED_CELL, BLUE_CELL]);
+    const exactInitial = makeGridModel(1, 2);
+    exactInitial.surfacePaths[0] = {
+      ...exactInitial.surfacePaths[0]!,
+      d: "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+    };
+    const exactPainted = makeGridModel(1, 2);
+    exactPainted.surfacePaths[0] = {
+      ...exactPainted.surfacePaths[0]!,
+      d: "M 0 0 L 2 0 L 2 1 L 0 1 Z",
+    };
+
+    previewProject(controller, initial, 1);
+    flushFrame(0);
+    controller.update(exactInitial);
+    previewProject(controller, painted, 2);
+    flushFrame(10);
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    const oldExact = findNamedObject<Mesh>(
+      sceneAdd,
+      "bead-preview-surface-0",
+    );
+    const parse = vi.spyOn(SVGLoader.prototype, "parse");
+
+    controller.update(exactPainted, 2);
+    expect(parse).not.toHaveBeenCalled();
+
+    for (const timestamp of [80, 190, 379]) {
+      flushFrame(timestamp);
+      expect(parse).not.toHaveBeenCalled();
+      expect(fastMesh.visible).toBe(true);
+      expect(oldExact.visible).toBe(false);
+    }
+
+    flushFrame(10 + BEAD_PLACEMENT_ANIMATION_MS);
+    expect(parse).not.toHaveBeenCalled();
+    expect(fastMesh.visible).toBe(true);
+    expect(oldExact.visible).toBe(false);
+    expect(pendingFrameCount()).toBe(1);
+
+    flushFrame(10 + BEAD_PLACEMENT_ANIMATION_MS + 1);
+    const exactMeshes = sceneAdd.mock.calls.flat().filter(
+      (object) => object.name === "bead-preview-surface-0",
+    ) as Mesh[];
+    const latestExact = exactMeshes.at(-1)!;
+    expect(parse).toHaveBeenCalledTimes(1);
+    expect(fastMesh.visible).toBe(false);
+    expect(latestExact).not.toBe(oldExact);
+    expect(latestExact.visible).toBe(true);
+    expect(pendingFrameCount()).toBe(0);
+    controller.dispose();
+  });
+
+  it("ignores stale exact revision N without hiding fast revision N plus 1", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const initial = makeProject([RED_CELL, EMPTY_CELL]);
+    const painted = makeProject([RED_CELL, BLUE_CELL]);
+    const exactInitial = makeGridModel(1, 2);
+
+    previewProject(controller, initial, 1);
+    flushFrame(0);
+    controller.update(exactInitial, 1);
+    flushFrame(1);
+    flushFrame(2);
+    previewProject(controller, painted, 2);
+    flushFrame(10);
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    const oldExact = findNamedObject<Mesh>(
+      sceneAdd,
+      "bead-preview-surface-0",
+    );
+    const parse = vi.spyOn(SVGLoader.prototype, "parse");
+
+    controller.update(makeGridModel(1, 2), 1);
+    flushFrame(20);
+
+    expect(parse).not.toHaveBeenCalled();
+    expect(fastMesh.visible).toBe(true);
+    expect(oldExact.visible).toBe(false);
+    controller.dispose();
+  });
+
+  it("drops a deferred exact model when a newer preview revision arrives", () => {
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    previewProject(controller, makeProject([RED_CELL, EMPTY_CELL]), 1);
+    flushFrame(0);
+    const parse = vi.spyOn(SVGLoader.prototype, "parse");
+
+    controller.update(makeGridModel(1, 2), 1);
+    flushFrame(1);
+    expect(parse).not.toHaveBeenCalled();
+    expect(pendingFrameCount()).toBe(1);
+
+    previewProject(controller, makeProject([RED_CELL, BLUE_CELL]), 2);
+    flushFrame(2);
+    flushFrame(2 + BEAD_PLACEMENT_ANIMATION_MS);
+
+    expect(parse).not.toHaveBeenCalled();
+    expect(pendingFrameCount()).toBe(0);
+    controller.dispose();
+  });
+
+  it("builds only the latest exact model received for one revision", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    previewProject(controller, makeProject([RED_CELL, BLUE_CELL]), 1);
+    flushFrame(0);
+    const firstExact = makeGridModel(1, 2);
+    firstExact.surfacePaths[0] = {
+      ...firstExact.surfacePaths[0]!,
+      d: "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+    };
+    const latestExact = makeGridModel(1, 2);
+    latestExact.surfacePaths[0] = {
+      ...latestExact.surfacePaths[0]!,
+      d: "M 0 0 L 2 0 L 2 1 L 0 1 Z",
+    };
+    const parse = vi.spyOn(SVGLoader.prototype, "parse");
+
+    controller.update(firstExact, 1);
+    controller.update(latestExact, 1);
+    expect(parse).not.toHaveBeenCalled();
+    flushFrame(1);
+    expect(parse).not.toHaveBeenCalled();
+    flushFrame(2);
+
+    expect(parse).toHaveBeenCalledTimes(1);
+    const surface = sceneAdd.mock.calls.flat().find(
+      (object) => object.name === "bead-preview-surface-0",
+    ) as Mesh;
+    surface.geometry.computeBoundingBox();
+    expect(surface.geometry.boundingBox?.max.x).toBeCloseTo(2.6, 5);
+    expect(pendingFrameCount()).toBe(0);
+    controller.dispose();
+  });
+
+  it("preserves camera position quaternion up and target across fast exact handoff", () => {
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const initial = makeProject([RED_CELL, EMPTY_CELL]);
+    const painted = makeProject([RED_CELL, BLUE_CELL]);
+    const exactInitial = makeGridModel(1, 2);
+    const exactPainted = makeGridModel(1, 2);
+    exactPainted.surfacePaths[0] = {
+      ...exactPainted.surfacePaths[0]!,
+      d: "M 0 0 L 2 0 L 2 1 L 0 1 Z",
+    };
+
+    previewProject(controller, initial, 1);
+    flushFrame(0);
+    controller.update(exactInitial, 1);
+    flushFrame(1);
+    flushFrame(2);
+    const { camera, target } = capturedControls[0]!;
+    camera.position.set(17, 23, -11);
+    camera.quaternion.setFromAxisAngle(new Vector3(1, 2, 3).normalize(), 0.61);
+    camera.up.set(0.2, 0.9, -0.3).normalize();
+    target.set(3, 4, 5);
+    const position = camera.position.clone();
+    const quaternion = camera.quaternion.clone();
+    const up = camera.up.clone();
+    const savedTarget = target.clone();
+
+    previewProject(controller, painted, 2);
+    flushFrame(10);
+    controller.update(exactPainted, 2);
+    flushFrame(10 + BEAD_PLACEMENT_ANIMATION_MS);
+    flushFrame(10 + BEAD_PLACEMENT_ANIMATION_MS + 1);
+
+    expect(camera.position).toEqual(position);
+    expect(camera.quaternion.angleTo(quaternion)).toBeCloseTo(0, 12);
+    expect(camera.up).toEqual(up);
+    expect(target).toEqual(savedTarget);
+    controller.dispose();
+  });
+
+  it("keeps the displayed exact surface when a two phase rebuild throws", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const current = makeGridModel(1, 2);
+    controller.update(current);
+    const currentExact = findNamedObject<Mesh>(
+      sceneAdd,
+      "bead-preview-surface-0",
+    );
+    const failing = makeGridModel(1, 2);
+    failing.surfacePaths = [
+      {
+        ...failing.surfacePaths[0]!,
+        d: "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+      },
+      {
+        ...failing.surfacePaths[0]!,
+        d: "M 1 0 L 2 0 L 2 1 L 1 1 Z",
+      },
+    ];
+    const originalParse = SVGLoader.prototype.parse;
+    vi.spyOn(SVGLoader.prototype, "parse")
+      .mockImplementationOnce(function (this: SVGLoader, source: string) {
+        return originalParse.call(this, source);
+      })
+      .mockImplementationOnce(() => {
+        throw new Error("synthetic exact build failure");
+      });
+    const geometryDispose = vi.spyOn(ExtrudeGeometry.prototype, "dispose");
+    const materialDispose = vi.spyOn(
+      MeshPhysicalMaterial.prototype,
+      "dispose",
+    );
+
+    expect(() => controller.update(failing)).not.toThrow();
+
+    const exactMeshes = sceneAdd.mock.calls.flat().filter(
+      (object) => object.name.startsWith("bead-preview-surface-"),
+    );
+    expect(exactMeshes).toEqual([currentExact]);
+    expect(currentExact.visible).toBe(true);
+    expect(geometryDispose).toHaveBeenCalledTimes(1);
+    expect(materialDispose).toHaveBeenCalledTimes(1);
+    controller.dispose();
+  });
+
+  it("attempts a deferred exact failure once without leaving a RAF retry", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    previewProject(controller, makeProject([RED_CELL]), 1);
+    flushFrame(0);
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    const failing = makeGridModel(1, 2);
+    failing.surfacePaths = [
+      {
+        ...failing.surfacePaths[0]!,
+        d: "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+      },
+      {
+        ...failing.surfacePaths[0]!,
+        d: "M 1 0 L 2 0 L 2 1 L 1 1 Z",
+      },
+    ];
+    const originalParse = SVGLoader.prototype.parse;
+    const parse = vi.spyOn(SVGLoader.prototype, "parse")
+      .mockImplementationOnce(function (this: SVGLoader, source: string) {
+        return originalParse.call(this, source);
+      })
+      .mockImplementationOnce(() => {
+        throw new Error("synthetic deferred exact build failure");
+      });
+
+    controller.update(failing, 1);
+    expect(parse).not.toHaveBeenCalled();
+    flushFrame(1);
+    expect(parse).not.toHaveBeenCalled();
+    expect(fastMesh.visible).toBe(true);
+    expect(pendingFrameCount()).toBe(1);
+
+    flushFrame(2);
+    expect(parse).toHaveBeenCalledTimes(2);
+    expect(fastMesh.visible).toBe(true);
+    expect(pendingFrameCount()).toBe(0);
+    flushFrame(3);
+    expect(parse).toHaveBeenCalledTimes(2);
+    expect(pendingFrameCount()).toBe(0);
+    controller.dispose();
+  });
+
+  it("rebuilds the fast layer for reduced motion changes and removes listeners", () => {
+    let matches = false;
+    let changeListener: ((event: MediaQueryListEvent) => void) | null = null;
+    const addEventListener = vi.fn(
+      (_type: string, listener: (event: MediaQueryListEvent) => void) => {
+        changeListener = listener;
+      },
+    );
+    const removeEventListener = vi.fn();
+    const mediaQuery = {
+      get matches() {
+        return matches;
+      },
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addEventListener,
+      removeEventListener,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    } as unknown as MediaQueryList;
+    vi.stubGlobal("matchMedia", vi.fn(() => mediaQuery));
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    previewProject(controller, makeProject([EMPTY_CELL]), 1);
+    flushFrame(0);
+    const firstFast = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    const firstFastDispose = vi.spyOn(firstFast, "dispose");
+
+    matches = true;
+    expect(changeListener).not.toBeNull();
+    changeListener!({ matches: true } as MediaQueryListEvent);
+    flushFrame(1);
+
+    const fastMeshes = sceneAdd.mock.calls.flat().filter(
+      (object) => object.name === "bead-preview-fast-beads",
+    ) as InstancedMesh[];
+    expect(firstFastDispose).toHaveBeenCalledTimes(1);
+    expect(fastMeshes).toHaveLength(2);
+    previewProject(controller, makeProject([RED_CELL]), 2);
+    flushFrame(10);
+    expect(pendingFrameCount()).toBe(0);
+
+    controller.dispose();
+    expect(removeEventListener).toHaveBeenCalledWith(
+      "change",
+      expect.any(Function),
+    );
+  });
+
+  it("uses and cleans up legacy reduced motion listeners", () => {
+    const addListener = vi.fn();
+    const removeListener = vi.fn();
+    const mediaQuery = {
+      matches: false,
+      media: "(prefers-reduced-motion: reduce)",
+      addListener,
+      removeListener,
+    } as unknown as MediaQueryList;
+    vi.stubGlobal("matchMedia", vi.fn(() => mediaQuery));
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+
+    expect(addListener).toHaveBeenCalledWith(expect.any(Function));
+    controller.dispose();
+    expect(removeListener).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it("cancels the unified frame and releases the fast layer exactly once", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    previewProject(controller, makeProject([EMPTY_CELL]), 1);
+    flushFrame(0);
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    const fastDispose = vi.spyOn(fastMesh, "dispose");
+    previewProject(controller, makeProject([RED_CELL]), 2);
+    expect(pendingFrameCount()).toBe(1);
+
+    controller.dispose();
+    controller.dispose();
+
+    expect(cancelAnimationFrame).toHaveBeenCalledTimes(1);
+    expect(pendingFrameCount()).toBe(0);
+    expect(fastDispose).toHaveBeenCalledTimes(1);
+    expect(capturedRenderers[0]?.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases pending fast resources once when WebGL context is lost", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const onUnavailable = vi.fn();
+    const canvas = document.createElement("canvas");
+    const controller = createBeadThreePreviewController(canvas, onUnavailable);
+    previewProject(controller, makeProject([EMPTY_CELL]), 1);
+    flushFrame(0);
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    const fastDispose = vi.spyOn(fastMesh, "dispose");
+    previewProject(controller, makeProject([RED_CELL]), 2);
+
+    canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    controller.dispose();
+
+    expect(onUnavailable).toHaveBeenCalledTimes(1);
+    expect(pendingFrameCount()).toBe(0);
+    expect(fastDispose).toHaveBeenCalledTimes(1);
   });
 
   it("reserves primary drag for editing while keeping mouse navigation", () => {

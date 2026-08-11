@@ -26,10 +26,42 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
 
-import type { PhysicalPreviewModel } from "../domain/physicalPreviewModel";
+import {
+  createBeadFastPreviewLayer,
+  type BeadFastPreviewLayer,
+} from "./beadFastPreviewLayer";
+import {
+  buildFastBeadPreviewModel,
+  type FastBeadPreviewModel,
+} from "../domain/fastPreviewModel";
+import {
+  buildPhysicalPreviewLayout,
+  type PhysicalPreviewLayout,
+  type PhysicalPreviewModel,
+} from "../domain/physicalPreviewModel";
+import type { BeadProject } from "../domain/types";
 
 export interface BeadThreePreviewController {
-  update(model: PhysicalPreviewModel): void;
+  /**
+   * Publishes the next browser-side project preview. Revisions must be
+   * non-negative integers that increase strictly; duplicate or stale values
+   * are ignored so one exact result can pair with only one fast revision.
+   * The optional method shape is transitional until all React callers migrate.
+   *
+   * 发布下一份浏览器端项目预览。修订号必须是严格递增的非负整数；重复或
+   * 过期值会被忽略，确保一份精确结果只与一份快速预览配对。方法暂时可选，
+   * 仅用于 React 调用方迁移期间的兼容。
+   */
+  previewProject?(project: BeadProject, revision: number): void;
+
+  /**
+   * Commits exact fused geometry. A supplied revision must match the latest
+   * accepted fast revision; the single-argument legacy form is transitional.
+   *
+   * 提交精确压合几何。传入的修订号必须匹配最近一次已接收的快速预览；
+   * 单参数旧式调用仅用于迁移期兼容。
+   */
+  update(model: PhysicalPreviewModel, revision?: number): void;
   pickCellAt(clientX: number, clientY: number): number | null;
   setSelectedCell(cellIndex: number | null): void;
   setHoveredCell(cellIndex: number | null): void;
@@ -137,33 +169,9 @@ function resolveMinimumCameraDistanceForView(
   return minimumDistance;
 }
 
-function hashText(hash: number, text: string): number {
-  let next = hash;
-  for (let index = 0; index < text.length; index += 1) {
-    next ^= text.charCodeAt(index);
-    next = Math.imul(next, 16777619);
-  }
-  return next >>> 0;
-}
-
-function surfaceGeometryKey(model: PhysicalPreviewModel): string {
-  let hash = 2166136261;
-  for (const path of model.surfacePaths) hash = hashText(hash, path.d);
-  return [
-    model.widthMm,
-    model.depthMm,
-    model.heightMm,
-    model.beadPitchMm,
-    model.surfacePaths.length,
-    hash,
-  ].join(":");
-}
-
-function surfaceColorKey(model: PhysicalPreviewModel): string {
-  return model.surfacePaths.map((path) => path.fill).join(":");
-}
-
-function boardKey(model: PhysicalPreviewModel): string {
+function boardKey(
+  model: Pick<PhysicalPreviewModel, "board" | "beadPitchMm">,
+): string {
   const { board } = model;
   return [
     board.widthMm,
@@ -175,6 +183,26 @@ function boardKey(model: PhysicalPreviewModel): string {
     board.pegs.length,
     model.beadPitchMm,
   ].join(":");
+}
+
+function physicalLayoutKey(project: BeadProject): string {
+  return [
+    project.projectId,
+    project.rows,
+    project.columns,
+    project.beadPitchMm,
+    project.compression,
+  ].join(":");
+}
+
+interface PendingFastPreview {
+  model: FastBeadPreviewModel;
+  revision: number;
+}
+
+interface PendingExactModel {
+  model: PhysicalPreviewModel;
+  revision: number;
 }
 
 function escapeXmlAttribute(value: string): string {
@@ -240,9 +268,19 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
   private boardMesh: Mesh | null = null;
   private pegMesh: InstancedMesh | null = null;
   private surfaceMeshes: Mesh[] = [];
+  private fastLayer: BeadFastPreviewLayer;
+  private pendingFastPreview: PendingFastPreview | null = null;
+  private latestFastModel: FastBeadPreviewModel | null = null;
+  private pendingExactModel: PendingExactModel | null = null;
+  private exactBuildArmed = false;
+  private latestPreviewRevision = -1;
+  private currentExactRevision: number | null = null;
+  private physicalLayoutCacheKey: string | null = null;
+  private physicalLayoutCache: PhysicalPreviewLayout | null = null;
+  private reducedMotionQuery: MediaQueryList | null = null;
+  private reducedMotionListenerMode: "modern" | "legacy" | null = null;
+  private reduceMotion = false;
   private currentBoardKey: string | null = null;
-  private currentSurfaceGeometryKey: string | null = null;
-  private currentSurfaceColorKey: string | null = null;
   private frameKey: string | null = null;
   private framedWidthMm: number | null = null;
   private framedDepthMm: number | null = null;
@@ -291,22 +329,79 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     this.controls.mouseButtons.RIGHT = MOUSE.ROTATE;
     this.controls.addEventListener("change", this.scheduleRender);
     this.canvas.addEventListener("webglcontextlost", this.handleContextLost);
+    this.reducedMotionQuery = this.resolveReducedMotionQuery();
+    this.reduceMotion = this.reducedMotionQuery?.matches ?? false;
+    this.fastLayer = createBeadFastPreviewLayer(
+      this.scene,
+      this.reduceMotion,
+    );
+    this.addReducedMotionListener();
   }
 
-  update(model: PhysicalPreviewModel): void {
+  previewProject(project: BeadProject, revision: number): void {
+    if (this.disposed || this.unavailable) return;
+    if (
+      !Number.isInteger(revision) ||
+      revision < 0 ||
+      revision <= this.latestPreviewRevision
+    ) {
+      return;
+    }
+
+    const layout = this.resolvePhysicalLayout(project);
+    this.applySceneLayout(layout, project.rows, project.columns);
+    const fastModel = buildFastBeadPreviewModel(project, layout);
+    this.latestPreviewRevision = revision;
+    this.latestFastModel = fastModel;
+    this.pendingFastPreview = { model: fastModel, revision };
+    this.clearPendingExactModel();
+    this.scheduleRender();
+  }
+
+  update(model: PhysicalPreviewModel, revision?: number): void {
     if (this.disposed || this.unavailable) return;
 
+    if (revision === undefined) {
+      this.applySceneLayout(
+        model,
+        Math.max(0, Math.round(model.depthMm / model.beadPitchMm)),
+        Math.max(0, Math.round(model.widthMm / model.beadPitchMm)),
+      );
+      this.clearPendingExactModel();
+      const nextMeshes = this.buildExactMeshes(model);
+      if (nextMeshes === null) return;
+      this.commitExactMeshes(nextMeshes, null);
+      this.scheduleRender();
+      return;
+    }
+
+    if (
+      !Number.isInteger(revision) ||
+      revision !== this.latestPreviewRevision
+    ) {
+      return;
+    }
+    this.pendingExactModel = {
+      model,
+      revision,
+    };
+    this.exactBuildArmed = false;
+    this.scheduleRender();
+  }
+
+  private applySceneLayout(
+    model: Pick<
+      PhysicalPreviewModel,
+      "widthMm" | "depthMm" | "heightMm" | "beadPitchMm" | "board"
+    >,
+    rows: number,
+    columns: number,
+  ): void {
     this.logicalWidthMm = model.widthMm;
     this.logicalDepthMm = model.depthMm;
     this.logicalPitchMm = model.beadPitchMm;
-    this.logicalColumns = Math.max(
-      0,
-      Math.round(model.widthMm / model.beadPitchMm),
-    );
-    this.logicalRows = Math.max(
-      0,
-      Math.round(model.depthMm / model.beadPitchMm),
-    );
+    this.logicalColumns = Math.max(0, columns);
+    this.logicalRows = Math.max(0, rows);
     const editPlaneY = Math.max(model.heightMm, model.board.pegHeightMm);
     this.editPlane.constant = -editPlaneY;
     this.markerY = editPlaneY + Math.max(0.02, model.beadPitchMm * 0.015);
@@ -317,27 +412,6 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     if (nextBoardKey !== this.currentBoardKey) {
       this.replaceBoard(model);
       this.currentBoardKey = nextBoardKey;
-    }
-
-    const nextGeometryKey = surfaceGeometryKey(model);
-    const nextColorKey = surfaceColorKey(model);
-    if (nextGeometryKey !== this.currentSurfaceGeometryKey) {
-      this.replaceSurfaces(model);
-      this.currentSurfaceGeometryKey = nextGeometryKey;
-      this.currentSurfaceColorKey = nextColorKey;
-    } else if (nextColorKey !== this.currentSurfaceColorKey) {
-      for (let index = 0; index < this.surfaceMeshes.length; index += 1) {
-        const material = this.surfaceMeshes[index]?.material;
-        const path = model.surfacePaths[index];
-        if (
-          path &&
-          material instanceof MeshPhysicalMaterial
-        ) {
-          material.color.set(path.fill);
-          material.needsUpdate = true;
-        }
-      }
-      this.currentSurfaceColorKey = nextColorKey;
     }
 
     const sceneWidthMm = model.board.widthMm;
@@ -361,7 +435,6 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
       this.framedMinimumY = minimumY;
       this.framedMaximumY = maximumY;
     }
-    this.scheduleRender();
   }
 
   pickCellAt(clientX: number, clientY: number): number | null {
@@ -481,14 +554,99 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
       "webglcontextlost",
       this.handleContextLost,
     );
+    this.removeReducedMotionListener();
     this.controls.removeEventListener("change", this.scheduleRender);
     this.controls.dispose();
+    this.fastLayer.dispose();
+    this.clearPendingExactModel();
     this.disposeBoard();
     this.disposeSurfaces();
     this.disposeMarker(this.hoverMarker);
     this.disposeMarker(this.selectedMarker);
     this.renderer.dispose();
   }
+
+  private resolvePhysicalLayout(project: BeadProject): PhysicalPreviewLayout {
+    const nextKey = physicalLayoutKey(project);
+    if (
+      this.physicalLayoutCacheKey === nextKey &&
+      this.physicalLayoutCache !== null
+    ) {
+      return this.physicalLayoutCache;
+    }
+    const layout = buildPhysicalPreviewLayout(project);
+    this.physicalLayoutCacheKey = nextKey;
+    this.physicalLayoutCache = layout;
+    return layout;
+  }
+
+  private resolveReducedMotionQuery(): MediaQueryList | null {
+    const ownerWindow = this.canvas.ownerDocument.defaultView;
+    if (ownerWindow === null || typeof ownerWindow.matchMedia !== "function") {
+      return null;
+    }
+    try {
+      return ownerWindow.matchMedia("(prefers-reduced-motion: reduce)");
+    } catch {
+      return null;
+    }
+  }
+
+  private addReducedMotionListener(): void {
+    const query = this.reducedMotionQuery;
+    if (query === null) return;
+    if (typeof query.addEventListener === "function") {
+      query.addEventListener("change", this.handleReducedMotionChange);
+      this.reducedMotionListenerMode = "modern";
+    } else if (typeof query.addListener === "function") {
+      query.addListener(this.handleReducedMotionChange);
+      this.reducedMotionListenerMode = "legacy";
+    }
+  }
+
+  private removeReducedMotionListener(): void {
+    const query = this.reducedMotionQuery;
+    if (query === null) return;
+    if (
+      this.reducedMotionListenerMode === "modern" &&
+      typeof query.removeEventListener === "function"
+    ) {
+      query.removeEventListener("change", this.handleReducedMotionChange);
+    } else if (
+      this.reducedMotionListenerMode === "legacy" &&
+      typeof query.removeListener === "function"
+    ) {
+      query.removeListener(this.handleReducedMotionChange);
+    }
+    this.reducedMotionListenerMode = null;
+    this.reducedMotionQuery = null;
+  }
+
+  private readonly handleReducedMotionChange = (
+    event: MediaQueryListEvent,
+  ): void => {
+    if (
+      this.disposed ||
+      this.unavailable ||
+      event.matches === this.reduceMotion
+    ) {
+      return;
+    }
+    this.reduceMotion = event.matches;
+    this.fastLayer.dispose();
+    this.fastLayer = createBeadFastPreviewLayer(
+      this.scene,
+      this.reduceMotion,
+    );
+    this.exactBuildArmed = false;
+    if (this.latestFastModel !== null && this.latestPreviewRevision >= 0) {
+      this.pendingFastPreview = {
+        model: this.latestFastModel,
+        revision: this.latestPreviewRevision,
+      };
+    }
+    this.scheduleRender();
+  };
 
   private updateMarker(marker: LineLoop, cellIndex: number | null): void {
     if (
@@ -526,7 +684,9 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     }
   }
 
-  private replaceBoard(model: PhysicalPreviewModel): void {
+  private replaceBoard(
+    model: Pick<PhysicalPreviewModel, "board">,
+  ): void {
     this.disposeBoard();
     const { board } = model;
     const boardGeometry = new RoundedBoxGeometry(
@@ -589,24 +749,37 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     this.scene.add(this.pegMesh);
   }
 
-  private replaceSurfaces(model: PhysicalPreviewModel): void {
-    this.disposeSurfaces();
-    for (let index = 0; index < model.surfacePaths.length; index += 1) {
-      const path = model.surfacePaths[index];
-      const geometry = buildBeadPreviewSurfaceGeometry(model, path.d);
-      if (geometry === null) continue;
-      const material = new MeshPhysicalMaterial({
-        color: path.fill,
-        roughness: 0.43,
-        metalness: 0,
-        clearcoat: 0.2,
-        clearcoatRoughness: 0.5,
-        side: DoubleSide,
-      });
-      const mesh = new Mesh(geometry, material);
-      mesh.name = `bead-preview-surface-${index}`;
-      this.surfaceMeshes.push(mesh);
-      this.scene.add(mesh);
+  private buildExactMeshes(model: PhysicalPreviewModel): Mesh[] | null {
+    const meshes: Mesh[] = [];
+    try {
+      for (let index = 0; index < model.surfacePaths.length; index += 1) {
+        const path = model.surfacePaths[index];
+        if (path === undefined) continue;
+        const geometry = buildBeadPreviewSurfaceGeometry(model, path.d);
+        if (geometry === null) continue;
+        let material: MeshPhysicalMaterial | null = null;
+        try {
+          material = new MeshPhysicalMaterial({
+            color: path.fill,
+            roughness: 0.43,
+            metalness: 0,
+            clearcoat: 0.2,
+            clearcoatRoughness: 0.5,
+            side: DoubleSide,
+          });
+          const mesh = new Mesh(geometry, material);
+          mesh.name = `bead-preview-surface-${index}`;
+          meshes.push(mesh);
+        } catch (error) {
+          geometry.dispose();
+          material?.dispose();
+          throw error;
+        }
+      }
+      return meshes;
+    } catch {
+      this.disposeExactMeshes(meshes);
+      return null;
     }
   }
 
@@ -637,7 +810,17 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
   }
 
   private disposeSurfaces(): void {
-    for (const mesh of this.surfaceMeshes) {
+    this.disposeExactMeshes(this.surfaceMeshes);
+    this.surfaceMeshes = [];
+  }
+
+  private clearPendingExactModel(): void {
+    this.pendingExactModel = null;
+    this.exactBuildArmed = false;
+  }
+
+  private disposeExactMeshes(meshes: readonly Mesh[]): void {
+    for (const mesh of meshes) {
       this.scene.remove(mesh);
       mesh.geometry.dispose();
       const material = mesh.material;
@@ -647,7 +830,6 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
         material.dispose();
       }
     }
-    this.surfaceMeshes = [];
   }
 
   private frameCamera(
@@ -757,6 +939,89 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     );
   }
 
+  private hideAllExactPreviews(): void {
+    for (const mesh of this.surfaceMeshes) mesh.visible = false;
+  }
+
+  private commitExactMeshes(meshes: Mesh[], revision: number | null): void {
+    this.disposeSurfaces();
+    this.surfaceMeshes = meshes;
+    this.currentExactRevision = revision;
+    for (const mesh of meshes) {
+      mesh.visible = true;
+      this.scene.add(mesh);
+    }
+    this.fastLayer.setVisible(false);
+  }
+
+  private buildDeferredExactIfCurrent(): void {
+    const pending = this.pendingExactModel;
+    this.clearPendingExactModel();
+    if (
+      pending === null ||
+      pending.revision !== this.latestPreviewRevision ||
+      pending.revision !== this.fastLayer.revision
+    ) {
+      return;
+    }
+    const nextMeshes = this.buildExactMeshes(pending.model);
+    if (nextMeshes === null) return;
+    this.commitExactMeshes(nextMeshes, pending.revision);
+  }
+
+  private readonly renderFrame = (timestamp: number): void => {
+    this.animationFrame = null;
+    if (this.disposed || this.unavailable) return;
+
+    const pendingFast = this.pendingFastPreview;
+    if (pendingFast !== null) {
+      this.pendingFastPreview = null;
+      if (pendingFast.revision === this.latestPreviewRevision) {
+        this.exactBuildArmed = false;
+        this.fastLayer.update(
+          pendingFast.model,
+          pendingFast.revision,
+          timestamp,
+        );
+        this.fastLayer.setVisible(true);
+        this.hideAllExactPreviews();
+      }
+    }
+
+    const hasActiveAnimation = this.fastLayer.advance(timestamp);
+    if (this.exactBuildArmed) {
+      if (hasActiveAnimation) {
+        this.exactBuildArmed = false;
+      } else {
+        this.buildDeferredExactIfCurrent();
+      }
+    } else if (
+      !hasActiveAnimation &&
+      this.pendingExactModel === null &&
+      this.currentExactRevision === this.fastLayer.revision
+    ) {
+      for (const mesh of this.surfaceMeshes) mesh.visible = true;
+      this.fastLayer.setVisible(false);
+    }
+    this.renderer.render(this.scene, this.camera);
+
+    let needsAnotherFrame =
+      this.pendingFastPreview !== null ||
+      this.fastLayer.hasActiveAnimations();
+    if (!needsAnotherFrame && this.pendingExactModel !== null) {
+      if (
+        this.pendingExactModel.revision === this.latestPreviewRevision &&
+        this.pendingExactModel.revision === this.fastLayer.revision
+      ) {
+        this.exactBuildArmed = true;
+        needsAnotherFrame = true;
+      } else {
+        this.clearPendingExactModel();
+      }
+    }
+    if (needsAnotherFrame) this.scheduleRender();
+  };
+
   private readonly scheduleRender = (): void => {
     if (
       this.disposed ||
@@ -765,22 +1030,14 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     ) {
       return;
     }
-    this.animationFrame = requestAnimationFrame(() => {
-      this.animationFrame = null;
-      if (!this.disposed && !this.unavailable) {
-        this.renderer.render(this.scene, this.camera);
-      }
-    });
+    this.animationFrame = requestAnimationFrame(this.renderFrame);
   };
 
   private readonly handleContextLost = (event: Event): void => {
     event.preventDefault();
     if (this.disposed || this.unavailable) return;
     this.unavailable = true;
-    if (this.animationFrame !== null) {
-      cancelAnimationFrame(this.animationFrame);
-      this.animationFrame = null;
-    }
+    this.dispose();
     this.onUnavailable();
   };
 }
