@@ -412,7 +412,6 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
     const geometry = createFastBeadGeometry(model);
     const material = new MeshPhysicalMaterial({
       color: 0xffffff,
-      vertexColors: true,
       roughness: 0.43,
       metalness: 0,
       clearcoat: 0.2,

@@ -25,6 +25,7 @@ import type { BeadCell } from "../src/domain/types";
 const EMPTY: BeadCell = { kind: "empty" };
 const RED: BeadCell = { kind: "color", paletteIndex: 0 };
 const BLUE: BeadCell = { kind: "color", paletteIndex: 1 };
+const BLACK: BeadCell = { kind: "color", paletteIndex: 2 };
 
 function makeModel(
   cells: BeadCell[],
@@ -49,6 +50,7 @@ function makeModel(
       palette: [
         [239, 56, 72],
         [40, 114, 224],
+        [0, 0, 0],
       ],
       beadPitchMm: 2.6,
       compression: overrides.compression ?? 65,
@@ -136,7 +138,7 @@ describe("persistent fast bead preview layer", () => {
     expect(mesh.geometry).toBeInstanceOf(ExtrudeGeometry);
     expect(mesh.material).toBeInstanceOf(MeshPhysicalMaterial);
     expect(mesh.material).toMatchObject({
-      vertexColors: true,
+      vertexColors: false,
       roughness: 0.43,
       metalness: 0,
       clearcoat: 0.2,
@@ -161,6 +163,31 @@ describe("persistent fast bead preview layer", () => {
     expectHidden(mesh, 0);
     expect(layer.hasActiveAnimations()).toBe(false);
     expect(layer.revision).toBe(4);
+  });
+
+  it("keeps existing red while a new black instance starts placing", () => {
+    const scene = new Scene();
+    const layer = createBeadFastPreviewLayer(scene, false);
+    const initial = makeModel([RED, EMPTY]);
+    const painted = makeModel([RED, BLACK]);
+
+    layer.update(initial, 1, 0);
+    const mesh = fastMesh(scene);
+    layer.update(painted, 2, 10);
+
+    expect(fastMesh(scene)).toBe(mesh);
+    expect(mesh.geometry.getAttribute("color")).toBeUndefined();
+    expect((mesh.material as MeshPhysicalMaterial).vertexColors).toBe(false);
+    expect(mesh.instanceColor).not.toBeNull();
+    expectColorClose(
+      readColor(mesh, 0),
+      new Color().setStyle("rgb(239, 56, 72)"),
+    );
+    expectColorClose(
+      readColor(mesh, 1),
+      new Color().setStyle("rgb(0, 0, 0)"),
+    );
+    expect(layer.hasActiveAnimations()).toBe(true);
   });
 
   it("ignores stale revisions without rolling back mesh or animation state", () => {
