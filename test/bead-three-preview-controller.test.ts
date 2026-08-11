@@ -1110,15 +1110,13 @@ describe("beadThreePreviewController resource lifecycle", () => {
     const mask = shader.uniforms.beadEditMask?.value as {
       image: { data: Uint8Array };
     };
-    expect(Array.from(mask.image.data)).toEqual([0, 0, 255]);
+    expect(Array.from(mask.image.data)).toEqual([0, 255, 255]);
     expect(shader.fragmentShader).toContain("discard");
     expect(shader.fragmentShader).toContain("clamp(");
     expect(readInstanceMatrix(fastMesh, 0).elements[0]).toBe(0);
     expect(readInstanceMatrix(fastMesh, 0).elements[5]).toBe(0);
     expect(readInstanceMatrix(fastMesh, 0).elements[10]).toBe(0);
-    expect(readInstanceMatrix(fastMesh, 1).elements[0]).toBe(0);
-    expect(readInstanceMatrix(fastMesh, 1).elements[5]).toBe(0);
-    expect(readInstanceMatrix(fastMesh, 1).elements[10]).toBe(0);
+    expect(readInstanceScale(fastMesh, 1).x).toBeGreaterThan(0);
     expect(readInstanceScale(fastMesh, 2).x).toBeGreaterThan(0);
     controller.dispose();
   });
@@ -1143,9 +1141,34 @@ describe("beadThreePreviewController resource lifecycle", () => {
     controller.update(makeGridModel(1, 2), 1);
     flushFrame(1);
     flushFrame(2);
+    const firstExactMesh = sceneAdd.mock.calls
+      .flat()
+      .find((candidate) => candidate.name === "bead-preview-surface-0") as Mesh;
+    const firstShader = {
+      uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: "#include <begin_vertex>",
+      fragmentShader: "#include <clipping_planes_fragment>",
+    };
+    (firstExactMesh.material as MeshPhysicalMaterial).onBeforeCompile(
+      firstShader as never,
+      {} as never,
+    );
+    const firstTexture = firstShader.uniforms.beadEditMask?.value;
 
     previewProject(controller, vertical, 2);
     flushFrame(10);
+    const liveTexture = firstShader.uniforms.beadEditMask?.value as {
+      image: { width: number; height: number };
+    };
+    const liveGrid = firstShader.uniforms.beadEditGrid?.value as {
+      x: number;
+      y: number;
+    };
+    expect(liveTexture).not.toBe(firstTexture);
+    expect(liveTexture.image.width).toBe(1);
+    expect(liveTexture.image.height).toBe(2);
+    expect(liveGrid.x).toBe(1);
+    expect(liveGrid.y).toBe(2);
     controller.update(makeGridModel(2, 1), 2);
     flushFrame(10 + BEAD_PLACEMENT_ANIMATION_MS);
     flushFrame(10 + BEAD_PLACEMENT_ANIMATION_MS + 1);
@@ -1259,13 +1282,11 @@ describe("beadThreePreviewController resource lifecycle", () => {
     const mask = shader.uniforms.beadEditMask?.value as {
       image: { data: Uint8Array };
     };
-    expect(Array.from(mask.image.data)).toEqual([0, 0, 255]);
+    expect(Array.from(mask.image.data)).toEqual([0, 255, 255]);
     expect(readInstanceMatrix(fastMesh, 0).elements[0]).toBe(0);
     expect(readInstanceMatrix(fastMesh, 0).elements[5]).toBe(0);
     expect(readInstanceMatrix(fastMesh, 0).elements[10]).toBe(0);
-    expect(readInstanceMatrix(fastMesh, 1).elements[0]).toBe(0);
-    expect(readInstanceMatrix(fastMesh, 1).elements[5]).toBe(0);
-    expect(readInstanceMatrix(fastMesh, 1).elements[10]).toBe(0);
+    expect(readInstanceScale(fastMesh, 1).x).toBeGreaterThan(0);
     expect(readInstanceMatrix(fastMesh, 2).elements[0]).toBe(0);
     expect(readInstanceMatrix(fastMesh, 2).elements[5]).toBe(0);
     expect(readInstanceMatrix(fastMesh, 2).elements[10]).toBe(0);

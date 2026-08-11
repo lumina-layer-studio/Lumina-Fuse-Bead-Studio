@@ -40,6 +40,8 @@ export interface BeadProjectHistoryEntry {
   kind: "project";
   beforeProject: BeadProject;
   afterProject: BeadProject;
+  /** Keeps the chosen paint color across structural canvas undo/redo. / 结构画布撤销重做时保留当前画笔颜色。 */
+  preserveActivePalette?: boolean;
 }
 
 export type BeadEditHistoryEntry =
@@ -373,6 +375,22 @@ function normalizeProjectState(
   };
 }
 
+function normalizeProjectHistoryState(
+  state: BeadEditorState,
+  present: BeadProject,
+  entry: BeadProjectHistoryEntry,
+): BeadEditorState {
+  const normalized = normalizeProjectState(state, present);
+  if (!entry.preserveActivePalette) return normalized;
+  return {
+    ...normalized,
+    activePaletteIndex: Math.max(
+      0,
+      Math.min(state.activePaletteIndex, present.palette.length - 1),
+    ),
+  };
+}
+
 function commitHistoryEntry(
   state: BeadEditorState,
   entry: BeadEditHistoryEntry,
@@ -389,7 +407,7 @@ function commitHistoryEntry(
     future: [],
   };
   return entry.kind === "project"
-    ? normalizeProjectState(nextState, present)
+    ? normalizeProjectHistoryState(nextState, present, entry)
     : nextState;
 }
 
@@ -608,7 +626,7 @@ export function beadEditorReducer(
         movingEntry,
         "backward",
       );
-      return normalizeProjectState(
+      return normalizeProjectHistoryState(
         {
           ...state,
           present,
@@ -616,6 +634,7 @@ export function beadEditorReducer(
           future: [movingEntry, ...state.future],
         },
         present,
+        movingEntry,
       );
     }
     return {
@@ -644,7 +663,7 @@ export function beadEditorReducer(
         movingEntry,
         "forward",
       );
-      return normalizeProjectState(
+      return normalizeProjectHistoryState(
         {
           ...state,
           present,
@@ -652,6 +671,7 @@ export function beadEditorReducer(
           future: state.future.slice(1),
         },
         present,
+        movingEntry,
       );
     }
     return {
@@ -729,6 +749,7 @@ export function beadEditorReducer(
         kind: "project",
         beforeProject: cloneBeadProject(state.present),
         afterProject: cloneBeadProject(expanded.project),
+        preserveActivePalette: true,
       });
       return {
         ...expandedState,

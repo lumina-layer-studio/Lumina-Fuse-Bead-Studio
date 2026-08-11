@@ -104,6 +104,7 @@ const INITIAL_SCALE = 0.18;
 const APPEARANCE_END_MS = 80;
 const FALL_END_MS = 270;
 const MAX_SUPERELLIPSE_EXPONENT_DELTA = 4;
+const HIGH_PRESSURE_SQUARE_START = 0.85;
 const IDENTITY_ROTATION = new Quaternion();
 
 function clamp01(value: number): number {
@@ -141,7 +142,11 @@ export function resolveFastBeadSuperellipseExponent(pressure: number): number {
   if (!Number.isFinite(pressure) || pressure < 0 || pressure > 1) {
     throw new RangeError("Fast preview pressure must be between 0 and 1.");
   }
-  return 2 + pressure * MAX_SUPERELLIPSE_EXPONENT_DELTA;
+  const highPressure = smoothstep(
+    (pressure - HIGH_PRESSURE_SQUARE_START) /
+      (1 - HIGH_PRESSURE_SQUARE_START),
+  );
+  return 2 + highPressure * MAX_SUPERELLIPSE_EXPONENT_DELTA;
 }
 
 function appendSuperellipse(

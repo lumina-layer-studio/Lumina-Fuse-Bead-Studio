@@ -312,6 +312,10 @@ describe("persistent fast bead preview layer", () => {
       compression: 100,
       irregularity: 0,
     });
+    const standardModel = makeModel([RED], {
+      compression: 50,
+      irregularity: 0,
+    });
 
     layer.update(roundModel, 1, 0);
     const roundRatio = diagonalOuterRatio(
@@ -325,6 +329,7 @@ describe("persistent fast bead preview layer", () => {
     );
 
     expect(resolveFastBeadSuperellipseExponent(roundModel.pressure)).toBe(2);
+    expect(resolveFastBeadSuperellipseExponent(standardModel.pressure)).toBe(2);
     expect(resolveFastBeadSuperellipseExponent(pressedModel.pressure))
       .toBeGreaterThan(2);
     expect(roundRatio).toBeCloseTo(Math.SQRT1_2, 4);

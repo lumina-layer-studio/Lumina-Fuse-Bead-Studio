@@ -288,8 +288,11 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
   private exactEditMaskData = new Uint8Array(0);
   private exactEditMaskRows = 0;
   private exactEditMaskColumns = 0;
-  private readonly exactEditMaskGrid = new Vector4();
-  private exactEditMaskPitchMm = 1;
+  private readonly exactEditMaskTextureUniform: { value: DataTexture | null } = {
+    value: null,
+  };
+  private readonly exactEditMaskGridUniform = { value: new Vector4() };
+  private readonly exactEditMaskPitchUniform = { value: 1 };
   private physicalLayoutCacheKey: string | null = null;
   private physicalLayoutCache: PhysicalPreviewLayout | null = null;
   private reducedMotionQuery: MediaQueryList | null = null;
@@ -499,9 +502,15 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
         before.color?.[0] !== after.color?.[0] ||
         before.color?.[1] !== after.color?.[1] ||
         before.color?.[2] !== after.color?.[2];
+      const geometryChanged =
+        before.xMm !== after.xMm ||
+        before.zMm !== after.zMm ||
+        before.scaleX !== after.scaleX ||
+        before.scaleZ !== after.scaleZ;
       if (
         before.visible !== after.visible ||
-        colorChanged
+        colorChanged ||
+        geometryChanged
       ) {
         mask[index] = 255;
       }
@@ -517,8 +526,13 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     pitchMm: number,
   ): void {
     const capacity = rows * columns;
-    this.exactEditMaskGrid.set(columns, rows, widthMm, depthMm);
-    this.exactEditMaskPitchMm = pitchMm;
+    this.exactEditMaskGridUniform.value.set(
+      columns,
+      rows,
+      widthMm,
+      depthMm,
+    );
+    this.exactEditMaskPitchUniform.value = pitchMm;
     if (
       this.exactEditMaskTexture !== null &&
       this.exactEditMaskData.length === capacity &&
@@ -542,6 +556,7 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     texture.flipY = false;
     texture.needsUpdate = true;
     this.exactEditMaskTexture = texture;
+    this.exactEditMaskTextureUniform.value = texture;
     this.exactEditMaskRows = rows;
     this.exactEditMaskColumns = columns;
   }
@@ -567,13 +582,9 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     material.onBeforeCompile = (shader) => {
       const texture = this.exactEditMaskTexture;
       if (texture === null) return;
-      shader.uniforms.beadEditMask = { value: texture };
-      shader.uniforms.beadEditGrid = {
-        value: this.exactEditMaskGrid.clone(),
-      };
-      shader.uniforms.beadEditPitch = {
-        value: this.exactEditMaskPitchMm,
-      };
+      shader.uniforms.beadEditMask = this.exactEditMaskTextureUniform;
+      shader.uniforms.beadEditGrid = this.exactEditMaskGridUniform;
+      shader.uniforms.beadEditPitch = this.exactEditMaskPitchUniform;
       shader.vertexShader = `
 varying vec3 vBeadEditPosition;
 ${shader.vertexShader.replace(
@@ -606,6 +617,7 @@ if (texture2D(beadEditMask, beadEditUv).r > 0.5) discard;`,
   private disposeExactEditMask(): void {
     this.exactEditMaskTexture?.dispose();
     this.exactEditMaskTexture = null;
+    this.exactEditMaskTextureUniform.value = null;
     this.exactEditMaskData = new Uint8Array(0);
     this.exactEditMaskRows = 0;
     this.exactEditMaskColumns = 0;
