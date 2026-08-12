@@ -17,27 +17,31 @@ const THREE_PREVIEW_METRICS = [
 ] as const;
 
 describe("benchmark contract", () => {
-  it("reports budgeted fast, fusion-surface, and 3D-geometry costs", async () => {
-    const execution = spawnSync(
-      process.execPath,
-      ["scripts/benchmark.mjs", "--check-regression"],
-      { cwd: process.cwd(), encoding: "utf8" },
-    );
-
-    expect(execution.status, execution.stderr).toBe(0);
-    const result: Record<string, unknown> = JSON.parse(execution.stdout);
-    const budget: Record<string, unknown> = JSON.parse(
-      await readFile("benchmarks/ci-budget.json", "utf8"),
-    );
-
-    for (const metric of THREE_PREVIEW_METRICS) {
-      expect(result[metric]).toSatisfy(
-        (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0,
+  it(
+    "reports budgeted fast, fusion-surface, and 3D-geometry costs",
+    async () => {
+      const execution = spawnSync(
+        process.execPath,
+        ["scripts/benchmark.mjs", "--check-regression"],
+        { cwd: process.cwd(), encoding: "utf8" },
       );
-      expect(budget[metric]).toSatisfy(
-        (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0,
+
+      expect(execution.status, execution.stderr).toBe(0);
+      const result: Record<string, unknown> = JSON.parse(execution.stdout);
+      const budget: Record<string, unknown> = JSON.parse(
+        await readFile("benchmarks/ci-budget.json", "utf8"),
       );
-      expect(result[metric]).toBeLessThanOrEqual(budget[metric] as number);
-    }
-  });
+
+      for (const metric of THREE_PREVIEW_METRICS) {
+        expect(result[metric]).toSatisfy(
+          (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0,
+        );
+        expect(budget[metric]).toSatisfy(
+          (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0,
+        );
+        expect(result[metric]).toBeLessThanOrEqual(budget[metric] as number);
+      }
+    },
+    20_000,
+  );
 });

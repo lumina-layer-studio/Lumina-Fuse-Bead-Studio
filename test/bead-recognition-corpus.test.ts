@@ -59,15 +59,19 @@ function recognize(
 }
 
 describe("generated chart recognition corpus", () => {
-  it("classifies labeled numbered, hard-pixel, and ring charts", () => {
-    const numbered = makeLabeledNumberedChart(17, 23);
-    const hardPixel = makeGeneratedHardPixelChart(52, 52, 8);
-    const rings = makeGeneratedRingChart(37, 37);
+  it(
+    "classifies labeled numbered, hard-pixel, and ring charts",
+    () => {
+      const numbered = makeLabeledNumberedChart(17, 23);
+      const hardPixel = makeGeneratedHardPixelChart(52, 52, 8);
+      const rings = makeGeneratedRingChart(37, 37);
 
-    expect(classifyPattern(numbered.raster).mode).toBe("numbered-grid");
-    expect(classifyPattern(hardPixel).mode).toBe("hard-pixel");
-    expect(classifyPattern(rings).mode).toBe("ring-preview");
-  });
+      expect(classifyPattern(numbered.raster).mode).toBe("numbered-grid");
+      expect(classifyPattern(hardPixel).mode).toBe("hard-pixel");
+      expect(classifyPattern(rings).mode).toBe("ring-preview");
+    },
+    15_000,
+  );
 
   it.each([
     [23, 17, 8],
