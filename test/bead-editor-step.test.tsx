@@ -23,6 +23,7 @@ const threePreviewCapture = vi.hoisted(() => ({
   onPickCell: null as ((cellIndex: number) => void) | null,
   allowDrag: null as boolean | null,
   selectedCellIndex: null as number | null,
+  editingEnabled: null as boolean | null,
 }));
 
 vi.mock("../src/app/BeadThreePreview", () => ({
@@ -35,17 +36,20 @@ vi.mock("../src/app/BeadThreePreview", () => ({
     onPickCell,
     allowDrag,
     selectedCellIndex,
+    editingEnabled,
   }: {
     project: ReturnType<typeof project>;
     ariaLabel: string;
     onPickCell?: (cellIndex: number) => void;
     allowDrag?: boolean;
     selectedCellIndex?: number | null;
+    editingEnabled?: boolean;
   }) => {
     threePreviewCapture.project = previewProject;
     threePreviewCapture.onPickCell = onPickCell ?? null;
     threePreviewCapture.allowDrag = allowDrag ?? null;
     threePreviewCapture.selectedCellIndex = selectedCellIndex ?? null;
+    threePreviewCapture.editingEnabled = editingEnabled ?? true;
     return <canvas role="img" aria-label={ariaLabel} />;
   },
 }));
@@ -92,10 +96,75 @@ describe("BeadEditorStep", () => {
     threePreviewCapture.onPickCell = null;
     threePreviewCapture.allowDrag = null;
     threePreviewCapture.selectedCellIndex = null;
+    threePreviewCapture.editingEnabled = null;
     vi.spyOn(
       HTMLCanvasElement.prototype,
       "getContext",
     ).mockReturnValue(null);
+  });
+
+  it("starts in a 3D-first workbench and only exposes controls for the selected workflow", () => {
+    render(
+      <BeadEditorStep
+        state={createBeadEditorState(project())}
+        sourceRaster={null}
+        translate={t}
+        dispatch={vi.fn()}
+        onNewProject={vi.fn()}
+      />,
+    );
+
+    const threePreview = screen.getByRole("img", {
+      name: "可旋转的拼豆 3D 成品",
+    });
+    expect(
+      screen.getByRole("toolbar", { name: "工作模式" }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("toolbar", { name: "工作模式" })).getByRole(
+        "button",
+        { name: "编辑豆子" },
+      ),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "放豆" })).toBeInTheDocument();
+    expect(threePreviewCapture.editingEnabled).toBe(true);
+    expect(threePreviewCapture.onPickCell).toEqual(expect.any(Function));
+    expect(
+      screen.queryByRole("slider", { name: "熨烫程度" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "调整熨烫" }));
+    expect(
+      screen.getByRole("img", { name: "可旋转的拼豆 3D 成品" }),
+    ).toBe(threePreview);
+    expect(
+      screen.getByRole("slider", { name: "熨烫程度" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "放豆" }),
+    ).not.toBeInTheDocument();
+    expect(threePreviewCapture.editingEnabled).toBe(false);
+    expect(threePreviewCapture.onPickCell).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "打印准备" }));
+    expect(
+      screen.getByRole("img", { name: "可旋转的拼豆 3D 成品" }),
+    ).toBe(threePreview);
+    expect(
+      screen.queryByRole("slider", { name: "熨烫程度" }),
+    ).not.toBeInTheDocument();
+    expect(threePreviewCapture.editingEnabled).toBe(false);
+    expect(threePreviewCapture.onPickCell).toBeNull();
+    expect(
+      screen.getByRole("region", { name: "2D 校对" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开 2D 校对" }));
+    expect(
+      screen.getByRole("img", { name: "可旋转的拼豆 3D 成品" }),
+    ).toBe(threePreview);
+    expect(
+      screen.getByRole("img", { name: "可编辑拼豆图案" }),
+    ).not.toHaveClass("bead-canvas--interactive");
   });
 
   it("reports occupied output size instead of blank auto-canvas margins", () => {
@@ -125,7 +194,7 @@ describe("BeadEditorStep", () => {
       />,
     );
 
-    expect(screen.getByText("成品尺寸：2.6 × 2.6 mm")).toBeInTheDocument();
+    expect(screen.getByText(/2\.6 × 2\.6 mm/)).toBeInTheDocument();
     expect(screen.getByText("4 × 4")).toBeInTheDocument();
   });
 
@@ -157,11 +226,6 @@ describe("BeadEditorStep", () => {
     expect(
       screen.getByRole("button", { name: "耗材颜色" }),
     ).toBeDisabled();
-    expect(
-      screen.getByText(
-        "尚未读取到耗材颜色，仍可使用原图颜色编辑。",
-      ),
-    ).toBeInTheDocument();
     const tools = [
       ["放豆", "paint"],
       ["擦除", "erase"],
@@ -201,15 +265,19 @@ describe("BeadEditorStep", () => {
       issueIndex: 1,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "原图" }));
+    fireEvent.click(screen.getByRole("button", { name: "展开 2D 校对" }));
+    const auxiliaryToolbar = screen.getByRole("toolbar", {
+      name: "二维校对视图",
+    });
+    fireEvent.click(within(auxiliaryToolbar).getByRole("button", { name: "原图" }));
     expect(
       screen.getByRole("img", { name: "拼豆图纸原图" }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "编辑豆子" }));
+    fireEvent.click(within(auxiliaryToolbar).getByRole("button", { name: "编辑豆子" }));
     expect(
       screen.getByRole("img", { name: "可编辑拼豆图案" }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "熨烫效果" }));
+    fireEvent.click(within(auxiliaryToolbar).getByRole("button", { name: "熨烫效果" }));
     const fusionPreview = screen.getByRole("img", {
       name: "拼豆熨烫效果",
     });
@@ -218,7 +286,6 @@ describe("BeadEditorStep", () => {
     expect(
       fusionPreview.querySelectorAll("[data-bead-fusion-path]"),
     ).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "3D 成品" }));
     expect(
       screen.getByRole("img", { name: "可旋转的拼豆 3D 成品" }),
     ).toBeInTheDocument();
@@ -272,8 +339,6 @@ describe("BeadEditorStep", () => {
     }
 
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "3D 成品" }));
-
     const initialPick = threePreviewCapture.onPickCell;
     expect(initialPick).toEqual(expect.any(Function));
     expect(threePreviewCapture.allowDrag).toBe(true);
@@ -308,9 +373,7 @@ describe("BeadEditorStep", () => {
     expect(
       screen.getByRole("img", { name: "可旋转的拼豆 3D 成品" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: "选中格局部放大" }),
-    ).toBeInTheDocument();
+    expect(threePreviewCapture.selectedCellIndex).toBe(0);
 
     fireEvent.click(screen.getByRole("button", { name: "撤销" }));
     expect(screen.getByTestId("first-cell-kind")).toHaveTextContent(
@@ -344,8 +407,6 @@ describe("BeadEditorStep", () => {
           onNewProject={vi.fn()}
         />,
       );
-      fireEvent.click(screen.getByRole("button", { name: "3D 成品" }));
-
       expect(threePreviewCapture.allowDrag).toBe(expectedAllowDrag);
       expect(threePreviewCapture.selectedCellIndex).toBe(3);
 
@@ -366,7 +427,7 @@ describe("BeadEditorStep", () => {
     },
   );
 
-  it("hosts the editor in one workspace while dock presentation stays outside business dispatch", () => {
+  it("hosts the editor in one 3D-first workspace without permanent side docks", () => {
     const state = createBeadEditorState(project());
     const dispatch = vi.fn<(action: BeadEditorAction) => void>();
     render(
@@ -380,34 +441,13 @@ describe("BeadEditorStep", () => {
     );
 
     const workspace = screen.getByTestId("bead-editor-workspace");
-    expect(
-      screen.getByRole("heading", { name: "放豆与修正" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "成品效果" }),
-    ).toBeInTheDocument();
+    expect(workspace.querySelector(".bead-editor-dock")).toBeNull();
     const editorHeadings = screen.getAllByRole("heading", {
       name: "编辑豆子",
     });
     expect(editorHeadings).toHaveLength(1);
     expect(editorHeadings[0].tagName).toBe("H1");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "收起放豆工具" }),
-    );
-    expect(workspace).toHaveAttribute("data-left-collapsed", "true");
-    const collapsedEditorHeadings = screen.getAllByRole("heading", {
-      name: "编辑豆子",
-    });
-    expect(collapsedEditorHeadings).toHaveLength(1);
-    expect(collapsedEditorHeadings[0].tagName).toBe("H1");
-    expect(
-      screen.getByRole("img", { name: "可编辑拼豆图案" }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "展开放豆工具" }),
-    );
     expect(
       screen.getByRole("button", { name: "放豆" }),
     ).toHaveAttribute("aria-pressed", "true");
@@ -464,6 +504,10 @@ describe("BeadEditorStep", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "展开 2D 校对" }));
+    const auxiliaryToolbar = screen.getByRole("toolbar", {
+      name: "二维校对视图",
+    });
     const matrixViewport = screen.getByTestId("bead-canvas-viewport");
     expect(
       screen.getByTestId("bead-canvas-viewport-content"),
@@ -478,7 +522,7 @@ describe("BeadEditorStep", () => {
       screen.getByRole("status", { name: "当前缩放：100%" }),
     ).toHaveTextContent("100%");
 
-    fireEvent.click(screen.getByRole("button", { name: "原图" }));
+    fireEvent.click(within(auxiliaryToolbar).getByRole("button", { name: "原图" }));
     expect(screen.getByTestId("bead-canvas-viewport")).toBe(
       matrixViewport,
     );
@@ -489,14 +533,12 @@ describe("BeadEditorStep", () => {
       screen.getByRole("status", { name: "当前缩放：250%" }),
     ).toHaveTextContent("250%");
 
-    fireEvent.click(screen.getByRole("button", { name: "编辑豆子" }));
+    fireEvent.click(within(auxiliaryToolbar).getByRole("button", { name: "编辑豆子" }));
     expect(
       screen.getByRole("status", { name: "当前缩放：100%" }),
     ).toHaveTextContent("100%");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "熨烫效果" }),
-    );
+    fireEvent.click(within(auxiliaryToolbar).getByRole("button", { name: "熨烫效果" }));
     expect(screen.getByTestId("bead-canvas-viewport")).toBe(
       matrixViewport,
     );
@@ -504,13 +546,13 @@ describe("BeadEditorStep", () => {
       screen.getByTestId("bead-canvas-viewport-content"),
     ).toHaveStyle({ width: "24px", height: "24px" });
 
-    fireEvent.click(screen.getByRole("button", { name: "3D 成品" }));
+    fireEvent.click(screen.getByRole("button", { name: "收起 2D 校对" }));
     expect(
       screen.queryByTestId("bead-canvas-viewport"),
     ).not.toBeInTheDocument();
   });
 
-  it("preserves the pressure view while the inspector dock collapses and expands", () => {
+  it("preserves the selected auxiliary view while the 2D check expands and collapses", () => {
     render(
       <BeadEditorStep
         state={createBeadEditorState(project())}
@@ -521,27 +563,21 @@ describe("BeadEditorStep", () => {
       />,
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "熨烫效果" }),
-    );
-    const pressureButton = screen.getByRole("button", {
+    fireEvent.click(screen.getByRole("button", { name: "展开 2D 校对" }));
+    const auxiliaryToolbar = screen.getByRole("toolbar", {
+      name: "二维校对视图",
+    });
+    const pressureButton = within(auxiliaryToolbar).getByRole("button", {
       name: "熨烫效果",
     });
+    fireEvent.click(pressureButton);
     expect(pressureButton).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByRole("img", { name: "拼豆熨烫效果" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "收起成品设置" }),
-    );
-    expect(screen.getByTestId("bead-editor-workspace")).toHaveAttribute(
-      "data-right-collapsed",
-      "true",
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "展开成品设置" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "收起 2D 校对" }));
+    fireEvent.click(screen.getByRole("button", { name: "展开 2D 校对" }));
 
     expect(pressureButton).toHaveAttribute("aria-pressed", "true");
     expect(
@@ -584,6 +620,7 @@ describe("BeadEditorStep", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "打印准备" }));
     expect(screen.getByText("当前耗材：当前测试色库")).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "匹配耗材颜色" }),
@@ -610,6 +647,7 @@ describe("BeadEditorStep", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "打印准备" }));
     expect(screen.getByText("当前耗材：当前测试色库")).toBeInTheDocument();
     fireEvent.change(
       screen.getByRole("combobox", { name: "图案颜色 2" }),
@@ -644,7 +682,6 @@ describe("BeadEditorStep", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "3D 成品" }));
     expect(
       screen.getByText(
         "当前图案有 4160 颗豆，超过 4096 颗的交互式 3D 安全上限；已显示同样效果的 2D 熨烫预览。",
@@ -730,6 +767,7 @@ describe("BeadEditorStep", () => {
     }
 
     render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "调整熨烫" }));
     const cellsBefore = screen.getByTestId("cells").textContent;
     const pitchBefore = screen.getByTestId("pitch").textContent;
     for (const name of [
@@ -824,10 +862,14 @@ describe("BeadEditorStep", () => {
         onNewProject={vi.fn()}
       />,
     );
-    const magnifierCanvas = screen.getByRole("img", {
+    const inspection = screen.getByRole("group", {
       name: "选中格局部放大",
     });
-    expect(magnifierCanvas).toHaveClass("bead-canvas--matrix");
+    expect(inspection).toBeInTheDocument();
+    expect(
+      within(inspection).getByRole("img", { name: "选中格局部放大" }),
+    ).toHaveAttribute("width", "64");
+    fireEvent.click(screen.getByRole("button", { name: "展开 2D 校对" }));
     const canvas = screen.getByRole("img", {
       name: "可编辑拼豆图案",
     });
@@ -879,6 +921,7 @@ describe("BeadEditorStep", () => {
         onNewProject={vi.fn()}
       />,
     );
+    fireEvent.click(screen.getByRole("button", { name: "展开 2D 校对" }));
     const canvas = screen.getByRole("img", {
       name: "可编辑拼豆图案",
     });
@@ -941,6 +984,9 @@ describe("BeadEditorStep", () => {
       name: "生成打印文件",
     });
     expect(button).toBeEnabled();
+    expect(
+      button.querySelector(".bead-editor-output-button__compact"),
+    ).toHaveTextContent("打印");
     fireEvent.click(button);
     expect(onHandoff).toHaveBeenCalledTimes(1);
 
@@ -1009,6 +1055,7 @@ describe("BeadEditorStep", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "打印准备" }));
     expect(
       screen.getByRole("button", { name: "耗材颜色" }),
     ).toBeDisabled();

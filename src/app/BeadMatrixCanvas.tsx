@@ -148,11 +148,12 @@ export function BeadMatrixCanvas({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context) return;
+    if (!canvas) return;
 
     canvas.width = visibleColumns * scale;
     canvas.height = visibleRows * scale;
+    const context = canvas.getContext("2d");
+    if (!context) return;
     context.imageSmoothingEnabled = false;
     context.clearRect(0, 0, canvas.width, canvas.height);
     if (renderResult) {

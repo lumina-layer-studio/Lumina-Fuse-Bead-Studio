@@ -420,6 +420,16 @@ async function recognizeAndOpenEditor() {
   await screen.findByRole("heading", { name: "编辑豆子" });
 }
 
+function switchWorkbenchMode(name: "编辑豆子" | "调整熨烫" | "打印准备") {
+  fireEvent.click(screen.getByRole("button", { name }));
+}
+
+function expandAuxiliaryView() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "展开 2D 校对" }),
+  );
+}
+
 describe("BeadWorkshopModule", () => {
   beforeEach(() => {
     vi.spyOn(
@@ -518,6 +528,7 @@ describe("BeadWorkshopModule", () => {
     expect(
       await screen.findByRole("heading", { name: "编辑豆子" }),
     ).toBeInTheDocument();
+    expandAuxiliaryView();
     expect(screen.getByRole("button", { name: "原图" })).toBeDisabled();
     await waitFor(() => {
       expect(harness.savedProjects().length).toBeGreaterThan(0);
@@ -1182,6 +1193,7 @@ describe("BeadWorkshopModule", () => {
       ).toBeNull();
     });
 
+    expandAuxiliaryView();
     fireEvent.click(screen.getByRole("button", { name: "原图" }));
     const sourceCanvas = screen.getByRole("img", {
       name: "拼豆图纸原图",
@@ -1201,6 +1213,7 @@ describe("BeadWorkshopModule", () => {
 
     await returnToEditor();
     fireEvent.click(screen.getByRole("button", { name: "重做" }));
+    expandAuxiliaryView();
     fireEvent.click(screen.getByRole("button", { name: "原图" }));
     const redoneSourceCanvas = screen.getByRole("img", {
       name: "拼豆图纸原图",
@@ -1457,6 +1470,7 @@ describe("BeadWorkshopModule", () => {
       retryable: true,
     });
 
+    switchWorkbenchMode("调整熨烫");
     fireEvent.change(
       screen.getByRole("spinbutton", { name: "豆子间距" }),
       { target: { value: "3.2" } },
@@ -1495,6 +1509,7 @@ describe("BeadWorkshopModule", () => {
     });
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
 
+    switchWorkbenchMode("调整熨烫");
     fireEvent.change(
       screen.getByRole("spinbutton", { name: "豆子间距" }),
       { target: { value: "3.2" } },
@@ -1540,6 +1555,7 @@ describe("BeadWorkshopModule", () => {
     await screen.findByRole("heading", {
       name: "编辑豆子",
     });
+    switchWorkbenchMode("调整熨烫");
     fireEvent.change(
       screen.getByRole("spinbutton", { name: "豆子间距" }),
       { target: { value: "3.2" } },
@@ -1820,6 +1836,8 @@ describe("BeadWorkshopModule", () => {
       />,
     );
 
+    await screen.findByRole("heading", { name: "编辑豆子" });
+    switchWorkbenchMode("打印准备");
     await screen.findByText(
       "尚未读取到耗材颜色，仍可使用原图颜色编辑。",
     );
@@ -1879,6 +1897,8 @@ describe("BeadWorkshopModule", () => {
       />,
     );
 
+    await screen.findByRole("heading", { name: "编辑豆子" });
+    switchWorkbenchMode("打印准备");
     const reload = await screen.findByRole("button", {
       name: "重新读取耗材颜色",
     });
@@ -1957,6 +1977,7 @@ describe("BeadWorkshopModule", () => {
     );
 
     await screen.findByRole("heading", { name: "编辑豆子" });
+    switchWorkbenchMode("打印准备");
     const printPreview = screen.getByRole("button", {
       name: "耗材颜色",
     });

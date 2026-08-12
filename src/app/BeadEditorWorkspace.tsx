@@ -1,276 +1,140 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type ReactNode,
-  type Ref,
-} from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 export interface BeadEditorWorkspaceLabels {
-  views: string;
-  edit: string;
-  inspector: string;
-  collapseEdit: string;
-  expandEdit: string;
-  collapseInspector: string;
-  expandInspector: string;
-  openEdit: string;
-  openInspector: string;
+  project: string;
+  workflow: string;
+  tools: string;
+  modeControls: string;
+  output: string;
+  auxiliary: string;
 }
 
 export interface BeadEditorWorkspaceProps {
   labels: BeadEditorWorkspaceLabels;
-  viewControls: ReactNode;
-  editControls: ReactNode;
-  inspectorControls: ReactNode;
+  projectControls: ReactNode;
+  workflowControls: ReactNode;
+  toolControls: ReactNode;
+  modeControls: ReactNode;
+  outputControls: ReactNode;
   canvas: ReactNode;
-  magnifier?: ReactNode;
+  auxiliaryView?: ReactNode;
+  auxiliaryExpanded?: boolean;
+  onCollapseAuxiliary?(): void;
 }
 
-interface BeadEditorDockPresentationProps {
-  title: string;
-  children: ReactNode;
-  contentId?: string;
-  collapsed?: boolean;
-  className?: string;
-  headerAction?: ReactNode;
-  bodyRef?: Ref<HTMLDivElement>;
-}
-
-function joinClassNames(...classNames: Array<string | undefined>): string {
-  return classNames.filter(Boolean).join(" ");
-}
-
-function BeadEditorDock({
-  title,
-  children,
-  contentId,
-  collapsed = false,
-  className,
-  headerAction,
-  bodyRef,
-}: BeadEditorDockPresentationProps) {
-  return (
-    <aside aria-label={title} className={className}>
-      <div className="bead-editor-dock__header">
-        <h2>{title}</h2>
-        {headerAction}
-      </div>
-      <div
-        id={contentId}
-        ref={bodyRef}
-        className="bead-editor-dock__body"
-        hidden={collapsed}
-      >
-        {children}
-      </div>
-    </aside>
-  );
-}
-
-export function BeadEditorFloatingControls({
-  className,
-  ...props
-}: BeadEditorDockPresentationProps) {
-  return (
-    <BeadEditorDock
-      {...props}
-      className={joinClassNames("bead-editor-floating-controls", className)}
-    />
-  );
-}
-
-export function BeadEditorInspector({
-  className,
-  ...props
-}: BeadEditorDockPresentationProps) {
-  return (
-    <BeadEditorDock
-      {...props}
-      className={joinClassNames("bead-editor-inspector", className)}
-    />
-  );
-}
-
-type MobileDrawer = "edit" | "inspector" | null;
-
-function firstFocusableElement(container: HTMLElement): HTMLElement | null {
-  const candidates = container.querySelectorAll<HTMLElement>(
-    'button, input, select, [tabindex]:not([tabindex="-1"])',
-  );
-  return (
-    Array.from(candidates).find(
-      (candidate) =>
-        !candidate.hasAttribute("disabled") && !candidate.hasAttribute("hidden"),
-    ) ?? null
-  );
-}
-
+/**
+ * 浏览器端拼豆主工作区：让 3D 画布保持稳定，只将当前任务需要的控件覆盖在画布四周。
+ * Browser-side bead workspace that keeps the 3D canvas stable and overlays only
+ * the controls required by the active workflow.
+ */
 export function BeadEditorWorkspace({
   labels,
-  viewControls,
-  editControls,
-  inspectorControls,
+  projectControls,
+  workflowControls,
+  toolControls,
+  modeControls,
+  outputControls,
   canvas,
-  magnifier,
+  auxiliaryView,
+  auxiliaryExpanded = false,
+  onCollapseAuxiliary,
 }: BeadEditorWorkspaceProps) {
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [mobileDrawer, setMobileDrawer] = useState<MobileDrawer>(null);
-  const workspaceId = useId();
-  const editControlsId = `bead-editor-edit-controls-${workspaceId}`;
-  const inspectorControlsId = `bead-editor-inspector-controls-${workspaceId}`;
-  const workspaceRef = useRef<HTMLElement | null>(null);
-  const editControlsBody = useRef<HTMLDivElement | null>(null);
-  const inspectorControlsBody = useRef<HTMLDivElement | null>(null);
-  const mobileTriggers = useRef<
-    Record<Exclude<MobileDrawer, null>, HTMLButtonElement | null>
-  >({ edit: null, inspector: null });
+  const auxiliaryRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCollapseAuxiliaryRef = useRef(onCollapseAuxiliary);
+  onCollapseAuxiliaryRef.current = onCollapseAuxiliary;
 
   useEffect(() => {
-    if (mobileDrawer === null) {
-      return;
-    }
-
-    const body =
-      mobileDrawer === "edit"
-        ? editControlsBody.current
-        : inspectorControlsBody.current;
-    if (body !== null) {
-      firstFocusableElement(body)?.focus();
-    }
-  }, [mobileDrawer]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
+    if (!auxiliaryExpanded) return undefined;
+    const auxiliary = auxiliaryRef.current;
+    if (auxiliary === null) return undefined;
+    previousFocusRef.current =
+      auxiliary.ownerDocument.activeElement instanceof HTMLElement
+        ? auxiliary.ownerDocument.activeElement
+        : null;
+    auxiliary.querySelector<HTMLElement>("button, input, select, [tabindex]")
+      ?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
       if (
         event.key !== "Escape" ||
-        mobileDrawer === null ||
-        document.querySelector('[role="dialog"][aria-modal="true"]') !== null ||
-        !workspaceRef.current?.contains(document.activeElement)
-      ) {
-        return;
-      }
-
-      const trigger = mobileTriggers.current[mobileDrawer];
-      setMobileDrawer(null);
-      if (
-        trigger?.isConnected &&
-        workspaceRef.current?.contains(trigger)
-      ) {
-        trigger.focus();
-      }
+        onCollapseAuxiliaryRef.current === undefined
+      ) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onCollapseAuxiliaryRef.current();
     };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [mobileDrawer]);
-
-  const toggleMobileDrawer = (drawer: Exclude<MobileDrawer, null>) => {
-    if (drawer === "edit") {
-      setLeftCollapsed(false);
-    } else {
-      setRightCollapsed(false);
-    }
-    setMobileDrawer((currentDrawer) =>
-      currentDrawer === drawer ? null : drawer,
-    );
-  };
+    auxiliary.ownerDocument.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      auxiliary.ownerDocument.removeEventListener("keydown", onKeyDown, true);
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+    };
+  }, [auxiliaryExpanded]);
 
   return (
     <section
       className="bead-editor-workspace"
-      ref={workspaceRef}
       data-testid="bead-editor-workspace"
-      data-left-collapsed={leftCollapsed}
-      data-right-collapsed={rightCollapsed}
-      data-mobile-drawer={mobileDrawer ?? "closed"}
+      data-has-tools={toolControls !== null}
     >
-      <div className="bead-editor-workspace__canvas">{canvas}</div>
-      <div className="bead-editor-workspace__overlay">
+      <div
+        className="bead-editor-workspace__canvas"
+        inert={auxiliaryExpanded ? true : undefined}
+      >{canvas}</div>
+      <div
+        className="bead-editor-workspace__topbar"
+        inert={auxiliaryExpanded ? true : undefined}
+      >
         <div
-          className="bead-editor-workspace__views"
-          role="toolbar"
-          aria-label={labels.views}
+          className="bead-editor-workspace__project"
+          role="group"
+          aria-label={labels.project}
         >
-          {viewControls}
+          {projectControls}
         </div>
-        <BeadEditorFloatingControls
-          title={labels.edit}
-          contentId={editControlsId}
-          bodyRef={editControlsBody}
-          collapsed={leftCollapsed}
-          className="bead-editor-dock bead-editor-dock--left"
-          headerAction={
-            <button
-              type="button"
-              aria-label={
-                leftCollapsed ? labels.expandEdit : labels.collapseEdit
-              }
-              aria-expanded={!leftCollapsed}
-              aria-controls={editControlsId}
-              onClick={() => setLeftCollapsed((collapsed) => !collapsed)}
-            >
-              {leftCollapsed ? "+" : "−"}
-            </button>
-          }
+        <div
+          className="bead-editor-workspace__workflow"
+          role="toolbar"
+          aria-label={labels.workflow}
         >
-          {editControls}
-        </BeadEditorFloatingControls>
-        <BeadEditorInspector
-          title={labels.inspector}
-          contentId={inspectorControlsId}
-          bodyRef={inspectorControlsBody}
-          collapsed={rightCollapsed}
-          className="bead-editor-dock bead-editor-dock--right"
-          headerAction={
-            <button
-              type="button"
-              aria-label={
-                rightCollapsed
-                  ? labels.expandInspector
-                  : labels.collapseInspector
-              }
-              aria-expanded={!rightCollapsed}
-              aria-controls={inspectorControlsId}
-              onClick={() => setRightCollapsed((collapsed) => !collapsed)}
-            >
-              {rightCollapsed ? "+" : "−"}
-            </button>
-          }
+          {workflowControls}
+        </div>
+        <div
+          className="bead-editor-workspace__output"
+          role="group"
+          aria-label={labels.output}
         >
-          {inspectorControls}
-        </BeadEditorInspector>
-        <div className="bead-editor-workspace__mobile-actions">
-          <button
-            ref={(element) => {
-              mobileTriggers.current.edit = element;
-            }}
-            type="button"
-            aria-label={labels.openEdit}
-            aria-expanded={mobileDrawer === "edit"}
-            aria-controls={editControlsId}
-            onClick={() => toggleMobileDrawer("edit")}
-          >
-            {labels.openEdit}
-          </button>
-          <button
-            ref={(element) => {
-              mobileTriggers.current.inspector = element;
-            }}
-            type="button"
-            aria-label={labels.openInspector}
-            aria-expanded={mobileDrawer === "inspector"}
-            aria-controls={inspectorControlsId}
-            onClick={() => toggleMobileDrawer("inspector")}
-          >
-            {labels.openInspector}
-          </button>
+          {outputControls}
         </div>
       </div>
-      {magnifier === undefined ? null : (
-        <div className="bead-editor-workspace__magnifier">{magnifier}</div>
+      {toolControls === null ? null : (
+        <div
+          className="bead-editor-workspace__tools"
+          role="toolbar"
+          aria-label={labels.tools}
+          inert={auxiliaryExpanded ? true : undefined}
+        >
+          {toolControls}
+        </div>
+      )}
+      <section
+        className="bead-editor-workspace__mode-dock"
+        aria-label={labels.modeControls}
+        inert={auxiliaryExpanded ? true : undefined}
+      >
+        {modeControls}
+      </section>
+      {auxiliaryView === undefined ? null : (
+        <section
+          ref={auxiliaryRef}
+          className="bead-editor-workspace__auxiliary"
+          aria-label={labels.auxiliary}
+          role={auxiliaryExpanded ? "dialog" : "region"}
+          aria-modal={auxiliaryExpanded ? true : undefined}
+          data-expanded={auxiliaryExpanded}
+        >
+          {auxiliaryView}
+        </section>
       )}
     </section>
   );

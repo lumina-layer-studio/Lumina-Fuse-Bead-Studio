@@ -976,8 +976,10 @@ describe("BeadThreePreview", () => {
         screen.getByRole("img", { name: "表面失败降级预览" }),
       ).toHaveProperty("tagName", "svg");
     });
-    expect(controller.dispose).toHaveBeenCalledTimes(1);
-    expect(renderer.dispose).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(controller.dispose).toHaveBeenCalledTimes(1);
+      expect(renderer.dispose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("falls back when the surface renderer throws while starting a render", async () => {
@@ -1835,5 +1837,67 @@ describe("BeadThreePreview", () => {
     expect(container).toHaveAttribute("data-interaction-mode", "edit");
     fireEvent.pointerLeave(canvas);
     expect(controller.setHoveredCell).toHaveBeenLastCalledWith(null);
+  });
+
+  it("locks the scene to view mode when the surrounding workflow is not editable", () => {
+    const controller = makeController();
+    vi.mocked(controller.pickCellAt).mockReturnValue(0);
+    const createController = vi.fn(() => controller);
+    const onPickCell = vi.fn();
+    const view = render(
+      <BeadThreePreview
+        project={makeProject()}
+        ariaLabel="只读工作流三维预览"
+        createController={createController}
+        createSurfaceRenderer={() =>
+          makeSurfaceRenderer(new Promise(() => undefined))
+        }
+        onPickCell={onPickCell}
+        editingEnabled
+        translate={translateThreePreviewControls}
+      />,
+    );
+
+    const canvas = screen.getByRole("img", {
+      name: "只读工作流三维预览",
+    });
+    const editButton = screen.getByRole("button", { name: "Edit" });
+    const viewButton = screen.getByRole("button", { name: "View" });
+    expect(editButton).toHaveAttribute("aria-pressed", "true");
+
+    view.rerender(
+      <BeadThreePreview
+        project={makeProject()}
+        ariaLabel="只读工作流三维预览"
+        createController={createController}
+        createSurfaceRenderer={() =>
+          makeSurfaceRenderer(new Promise(() => undefined))
+        }
+        onPickCell={onPickCell}
+        editingEnabled={false}
+        translate={translateThreePreviewControls}
+      />,
+    );
+
+    expect(editButton).toBeDisabled();
+    expect(editButton).toHaveAttribute("aria-pressed", "false");
+    expect(viewButton).toHaveAttribute("aria-pressed", "true");
+    dispatchPointer(canvas, "pointerdown", {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      pointerId: 1,
+      pointerType: "mouse",
+      isPrimary: true,
+    });
+    dispatchPointer(canvas, "pointerup", {
+      clientX: 10,
+      clientY: 10,
+      pointerId: 1,
+      pointerType: "mouse",
+      isPrimary: true,
+    });
+    expect(onPickCell).not.toHaveBeenCalled();
+    expect(createController).toHaveBeenCalledTimes(1);
   });
 });

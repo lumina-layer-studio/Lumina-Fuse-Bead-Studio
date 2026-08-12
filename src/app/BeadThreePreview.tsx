@@ -36,6 +36,7 @@ export interface BeadThreePreviewProps {
   onPickCell?(cellIndex: number): void;
   allowDrag?: boolean;
   selectedCellIndex?: number | null;
+  editingEnabled?: boolean;
   translate?(key: string): string;
 }
 
@@ -99,6 +100,7 @@ export function BeadThreePreview({
   onPickCell,
   allowDrag = false,
   selectedCellIndex = null,
+  editingEnabled = true,
   translate = defaultTranslate,
 }: BeadThreePreviewProps) {
   const [unavailable, setUnavailable] = useState(false);
@@ -106,7 +108,7 @@ export function BeadThreePreview({
     null,
   );
   const [interactionMode, setInteractionMode] =
-    useState<ThreeInteractionMode>("edit");
+    useState<ThreeInteractionMode>(editingEnabled ? "edit" : "view");
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const controllerRef = useRef<BeadThreePreviewController | null>(null);
@@ -133,6 +135,14 @@ export function BeadThreePreview({
   allowDragRef.current = allowDrag;
   selectedCellIndexRef.current = selectedCellIndex;
   interactionModeRef.current = interactionMode;
+
+  useEffect(() => {
+    const nextMode: ThreeInteractionMode = editingEnabled ? "edit" : "view";
+    if (interactionModeRef.current === nextMode) return;
+    interactionModeRef.current = nextMode;
+    clearEditGesture({ releaseCapture: true, clearHover: true });
+    setInteractionMode(nextMode);
+  }, [editingEnabled]);
 
   const releasePointerCapture = (pointerId: number) => {
     const canvas = canvasRef.current;
@@ -494,6 +504,7 @@ export function BeadThreePreview({
       return;
     }
     const startsEdit =
+      editingEnabled &&
       interactionModeRef.current === "edit" &&
       onPickCellRef.current !== undefined &&
       event.button === 0 &&
@@ -532,6 +543,7 @@ export function BeadThreePreview({
     if (gesture === null) {
       if (
         interactionModeRef.current === "edit" &&
+        editingEnabled &&
         onPickCellRef.current !== undefined &&
         event.pointerType !== "touch"
       ) {
@@ -682,6 +694,7 @@ export function BeadThreePreview({
             className="button button--secondary button--small segmented-control"
             aria-label={translate("workshop.bead.threeEditMode")}
             aria-pressed={interactionMode === "edit"}
+            disabled={!editingEnabled}
             onClick={() => changeInteractionMode("edit")}
           >
             {translate("workshop.bead.threeEditMode")}
