@@ -29,6 +29,7 @@ vi.mock("../src/app/BeadPaletteThreePreview", () => ({
             aria-label={colorLabel(index)}
             aria-pressed={activeIndex === index}
             data-bead-view="shared-webgl-upright-cylinder"
+            data-palette-index={index}
             onClick={() => onSelect(index)}
           />
         ))}
@@ -83,11 +84,19 @@ describe("BeadPaletteStrip", () => {
     expect(scroller.scrollLeft).toBe(327);
     fireEvent.click(screen.getByRole("button", { name: "查看前面的颜色" }));
     expect(scroller.scrollLeft).toBe(135);
+
+    scroller.scrollLeft = 655;
+    fireEvent.click(screen.getByRole("button", { name: "查看更多颜色" }));
+    expect(scroller.scrollLeft).toBe(660);
+
+    scroller.scrollLeft = 5;
+    fireEvent.click(screen.getByRole("button", { name: "查看前面的颜色" }));
+    expect(scroller.scrollLeft).toBe(0);
   });
 
   it("keeps adding a color pinned outside the scrollable swatches", () => {
     const onAdd = vi.fn();
-    render(
+    const { rerender } = render(
       <BeadPaletteStrip
         colors={Array.from({ length: 41 }, (_, index) => [
           index,
@@ -110,7 +119,105 @@ describe("BeadPaletteStrip", () => {
     expect(scroller).not.toContainElement(addInput);
     expect(addInput.closest(".bead-editor-palette-add")).toBeInTheDocument();
 
+    fireEvent.input(addInput, { target: { value: "#111111" } });
+    fireEvent.input(addInput, { target: { value: "#223344" } });
+    fireEvent.input(addInput, { target: { value: "#123456" } });
+    expect(onAdd).not.toHaveBeenCalled();
+
     fireEvent.change(addInput, { target: { value: "#123456" } });
     expect(onAdd).toHaveBeenCalledWith([18, 52, 86]);
+    expect(onAdd).toHaveBeenCalledTimes(1);
+
+    const latestOnAdd = vi.fn();
+    rerender(
+      <BeadPaletteStrip
+        colors={[[18, 52, 86]]}
+        activeIndex={0}
+        label="豆子颜色"
+        colorLabel={(index) => `颜色 ${index + 1}`}
+        previousLabel="查看前面的颜色"
+        nextLabel="查看更多颜色"
+        addLabel="添加自定义颜色"
+        onSelect={vi.fn()}
+        onAdd={latestOnAdd}
+      />,
+    );
+    fireEvent.change(addInput, { target: { value: "#abcdef" } });
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(latestOnAdd).toHaveBeenCalledWith([171, 205, 239]);
+  });
+
+  it("centers the active bead and clamps the first and last colors", () => {
+    const { rerender } = render(
+      <BeadPaletteStrip
+        colors={[[230, 40, 50], [20, 120, 210], [10, 20, 30]]}
+        activeIndex={0}
+        label="豆子颜色"
+        colorLabel={(index) => `颜色 ${index + 1}`}
+        previousLabel="查看前面的颜色"
+        nextLabel="查看更多颜色"
+        addLabel="添加自定义颜色"
+        onSelect={vi.fn()}
+        onAdd={vi.fn()}
+      />,
+    );
+    const scroller = screen.getByTestId("bead-palette-scroll");
+    const first = screen.getByRole("button", { name: "颜色 1" });
+    const middle = screen.getByRole("button", { name: "颜色 2" });
+    const last = screen.getByRole("button", { name: "颜色 3" });
+    Object.defineProperties(scroller, {
+      clientWidth: { value: 100 },
+      scrollWidth: { value: 300 },
+    });
+    vi.spyOn(scroller, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      right: 100,
+      width: 100,
+    } as DOMRect);
+    vi.spyOn(first, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      right: 54,
+      width: 54,
+    } as DOMRect);
+    vi.spyOn(middle, "getBoundingClientRect").mockReturnValue({
+      left: 173,
+      right: 227,
+      width: 54,
+    } as DOMRect);
+    vi.spyOn(last, "getBoundingClientRect").mockReturnValue({
+      left: 270,
+      right: 324,
+      width: 54,
+    } as DOMRect);
+
+    rerender(
+      <BeadPaletteStrip
+        colors={[[230, 40, 50], [20, 120, 210], [10, 20, 30]]}
+        activeIndex={1}
+        label="豆子颜色"
+        colorLabel={(index) => `颜色 ${index + 1}`}
+        previousLabel="查看前面的颜色"
+        nextLabel="查看更多颜色"
+        addLabel="添加自定义颜色"
+        onSelect={vi.fn()}
+        onAdd={vi.fn()}
+      />,
+    );
+    expect(scroller.scrollLeft).toBe(150);
+
+    rerender(
+      <BeadPaletteStrip
+        colors={[[230, 40, 50], [20, 120, 210], [10, 20, 30]]}
+        activeIndex={2}
+        label="豆子颜色"
+        colorLabel={(index) => `颜色 ${index + 1}`}
+        previousLabel="查看前面的颜色"
+        nextLabel="查看更多颜色"
+        addLabel="添加自定义颜色"
+        onSelect={vi.fn()}
+        onAdd={vi.fn()}
+      />,
+    );
+    expect(scroller.scrollLeft).toBe(200);
   });
 });

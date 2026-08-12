@@ -35,9 +35,9 @@ vi.mock("three", async (importOriginal) => {
 
 import { createBeadPaletteThreeRenderer } from "../src/app/beadPaletteThreeRenderer";
 
-function makeCanvas(): HTMLCanvasElement {
+function makeCanvas(width = 480): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
-  Object.defineProperty(canvas, "clientWidth", { value: 480 });
+  Object.defineProperty(canvas, "clientWidth", { value: width });
   Object.defineProperty(canvas, "clientHeight", { value: 64 });
   return canvas;
 }
@@ -113,6 +113,21 @@ describe("bead palette shared 3D renderer", () => {
     expect(firstMesh.material.color.getHex()).toBe(
       new Color().setStyle("rgb(20, 120, 210)").getHex(),
     );
+    renderer.dispose();
+  });
+
+  it("caps the backing buffer for a 256-color scroll strip", () => {
+    const renderer = createBeadPaletteThreeRenderer(makeCanvas(16_000));
+    renderer.update(
+      Array.from({ length: 256 }, () => [120, 80, 40] as const),
+    );
+
+    expect(rendererCapture.renderer?.setPixelRatio).toHaveBeenLastCalledWith(
+      expect.any(Number),
+    );
+    const pixelRatio = rendererCapture.renderer?.setPixelRatio.mock
+      .lastCall?.[0] as number;
+    expect(pixelRatio).toBeLessThanOrEqual(0.512);
     renderer.dispose();
   });
 });

@@ -22,6 +22,7 @@ const BEAD_HEIGHT = 1.12;
 const BEAD_SEGMENTS = 32;
 const BEAD_SPACING = 1.35;
 const BEAD_VERTICAL_VIEW = 1.9;
+const MAX_BACKING_WIDTH = 8192;
 
 function resolvePaletteFrame(colorsLength: number) {
   const span = Math.max(1, (colorsLength - 1) * BEAD_SPACING + 1);
@@ -153,7 +154,11 @@ class ThreeBeadPaletteRenderer implements BeadPaletteThreeRenderer {
     const height = Math.max(1, Math.round(this.canvas.clientHeight));
     const devicePixelRatio = this.canvas.ownerDocument.defaultView
       ?.devicePixelRatio ?? 1;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    this.renderer.setPixelRatio(Math.min(
+      devicePixelRatio,
+      1.5,
+      MAX_BACKING_WIDTH / width,
+    ));
     this.renderer.setSize(width, height, false);
     if (this.colors.length > 0) {
       const { span, centerX } = resolvePaletteFrame(this.colors.length);

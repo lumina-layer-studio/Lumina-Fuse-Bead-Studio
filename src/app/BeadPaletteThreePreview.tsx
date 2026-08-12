@@ -88,6 +88,7 @@ export function BeadPaletteThreePreview({
             aria-label={colorLabel(index)}
             aria-pressed={activeIndex === index}
             data-bead-view="shared-webgl-upright-cylinder"
+            data-palette-index={index}
             style={{
               "--bead-palette-fallback": `rgb(${color.join(" ")})`,
             } as CSSProperties}

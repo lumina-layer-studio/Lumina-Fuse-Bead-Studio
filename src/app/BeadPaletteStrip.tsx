@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 import type { RgbColor } from "../domain/types";
 import { BeadPaletteThreePreview } from "./BeadPaletteThreePreview";
@@ -36,6 +36,11 @@ function toHex(color: RgbColor): string {
     .join("")}`;
 }
 
+function setClampedScrollLeft(scroller: HTMLDivElement, next: number): void {
+  const maximum = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+  scroller.scrollLeft = Math.min(maximum, Math.max(0, next));
+}
+
 /**
  * 横向浏览豆子色样，并将普通滚轮转换成水平导航。
  * Browses bead swatches horizontally and maps a regular wheel to that axis.
@@ -52,7 +57,11 @@ export function BeadPaletteStrip({
   onAdd,
 }: BeadPaletteStripProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const colorInputRef = useRef<HTMLInputElement>(null);
+  const onAddRef = useRef(onAdd);
+  onAddRef.current = onAdd;
   const activeColor = colors[activeIndex] ?? colors[0] ?? [0, 0, 0];
+  const activeColorHex = toHex(activeColor);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -64,16 +73,66 @@ export function BeadPaletteStrip({
         : event.deltaY;
       if (delta === 0) return;
       event.preventDefault();
-      scroller.scrollLeft += delta;
+      setClampedScrollLeft(scroller, scroller.scrollLeft + delta);
     };
     scroller.addEventListener("wheel", onWheel, { passive: false });
     return () => scroller.removeEventListener("wheel", onWheel);
   }, []);
 
+  useEffect(() => {
+    const input = colorInputRef.current;
+    if (input === null) return undefined;
+    const commitColor = () => {
+      const color = fromHex(input.value);
+      if (color !== null) onAddRef.current(color);
+    };
+    input.addEventListener("change", commitColor);
+    return () => input.removeEventListener("change", commitColor);
+  }, []);
+
+  useEffect(() => {
+    const input = colorInputRef.current;
+    if (input !== null) input.value = activeColorHex;
+  }, [activeColorHex]);
+
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    const active = scroller?.querySelector<HTMLElement>(
+      `[data-palette-index="${activeIndex}"]`,
+    );
+    if (scroller === null || active === null || active === undefined) return;
+    const scrollerBounds = scroller.getBoundingClientRect();
+    const activeBounds = active.getBoundingClientRect();
+    const centered = scroller.scrollLeft + activeBounds.left -
+      scrollerBounds.left + activeBounds.width / 2 -
+      scrollerBounds.width / 2;
+    setClampedScrollLeft(scroller, centered);
+  }, [activeIndex, colors.length]);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) return undefined;
+    const ownerWindow = scroller.ownerDocument.defaultView;
+    const clampCurrentPosition = () => {
+      setClampedScrollLeft(scroller, scroller.scrollLeft);
+    };
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(clampCurrentPosition);
+      observer.observe(scroller);
+      return () => observer.disconnect();
+    }
+    ownerWindow?.addEventListener("resize", clampCurrentPosition);
+    return () => ownerWindow?.removeEventListener("resize", clampCurrentPosition);
+  }, []);
+
   const scrollByPage = (direction: -1 | 1) => {
     const scroller = scrollerRef.current;
     if (scroller === null) return;
-    scroller.scrollLeft += direction * Math.max(160, scroller.clientWidth * 0.8);
+    setClampedScrollLeft(
+      scroller,
+      scroller.scrollLeft +
+        direction * Math.max(160, scroller.clientWidth * 0.8),
+    );
   };
 
   return (
@@ -111,13 +170,10 @@ export function BeadPaletteStrip({
         <label className="bead-editor-palette-add" title={addLabel}>
           <span aria-hidden>+</span>
           <input
+            ref={colorInputRef}
             type="color"
             aria-label={addLabel}
-            value={toHex(activeColor)}
-            onChange={(event) => {
-              const color = fromHex(event.target.value);
-              if (color !== null) onAdd(color);
-            }}
+            defaultValue={activeColorHex}
           />
         </label>
       </div>
