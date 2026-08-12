@@ -147,6 +147,8 @@ const zhCN = {
   "workshop.bead.magnifier": "选中格局部放大",
   "workshop.bead.showGrid": "显示网格",
   "workshop.bead.paletteColor": "颜色 {index}",
+  "workshop.bead.palettePrevious": "查看前面的颜色",
+  "workshop.bead.paletteNext": "查看更多颜色",
   "workshop.bead.customColor": "添加自定义颜色",
   "workshop.bead.compression": "熨烫程度",
   "workshop.bead.compressionHint":
@@ -358,6 +360,8 @@ const enUS = {
   "workshop.bead.magnifier": "Selected-cell magnifier",
   "workshop.bead.showGrid": "Show grid",
   "workshop.bead.paletteColor": "Color {index}",
+  "workshop.bead.palettePrevious": "Show previous colors",
+  "workshop.bead.paletteNext": "Show more colors",
   "workshop.bead.customColor": "Add custom color",
   "workshop.bead.compression": "Ironing level",
   "workshop.bead.compressionHint":

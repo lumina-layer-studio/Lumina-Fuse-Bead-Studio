@@ -8,7 +8,6 @@ import type { RgbColor } from "../domain/types";
  */
 export interface BeadPaletteSwatchProps {
   color: RgbColor;
-  compression: number;
   label: string;
   selected: boolean;
   onSelect(): void;
@@ -28,92 +27,68 @@ function mixColor(
   ).join(" ")})`;
 }
 
-function traceSuperellipse(
+function traceCylinderSide(
   context: CanvasRenderingContext2D,
-  centerX: number,
-  centerY: number,
-  radius: number,
-  exponent: number,
 ): void {
-  const segments = 48;
   context.beginPath();
-  for (let index = 0; index <= segments; index += 1) {
-    const angle = index / segments * Math.PI * 2;
-    const cosine = Math.cos(angle);
-    const sine = Math.sin(angle);
-    const x = centerX +
-      radius * Math.sign(cosine) * Math.pow(Math.abs(cosine), 2 / exponent);
-    const y = centerY +
-      radius * Math.sign(sine) * Math.pow(Math.abs(sine), 2 / exponent);
-    if (index === 0) context.moveTo(x, y);
-    else context.lineTo(x, y);
-  }
+  context.moveTo(13.5, 26.5);
+  context.bezierCurveTo(12.8, 33, 12.4, 40.5, 13.2, 44.5);
+  context.bezierCurveTo(15.8, 51, 29, 55.5, 42.2, 55.5);
+  context.bezierCurveTo(55.8, 55.5, 67, 50.8, 68.2, 44.2);
+  context.lineTo(68.8, 28.4);
+  context.closePath();
+}
+
+function traceTopFace(context: CanvasRenderingContext2D): void {
+  context.beginPath();
+  context.ellipse(41, 27.5, 28, 15.8, 0.16, 0, Math.PI * 2);
   context.closePath();
 }
 
 function drawBead(
   context: CanvasRenderingContext2D,
   color: RgbColor,
-  compression: number,
 ): void {
-  const pressure = Math.max(0, Math.min(1, compression / 100));
-  const solid = pressure >= 1;
-  const exponent = pressure < 0.82 ? 2 : 2 + (pressure - 0.82) / 0.18 * 3.5;
-  const outerRadius = 22.5 + pressure * 1.2;
-  const holeRadius = solid ? 0 : 7.2 * Math.pow(1 - pressure, 0.72) + 2.1;
-  const centerX = 32;
-  const centerY = 30.5;
-
-  context.clearRect(0, 0, 64, 64);
+  context.clearRect(0, 0, 72, 64);
   context.save();
 
   context.fillStyle = "rgba(15, 23, 42, 0.2)";
   context.beginPath();
-  context.ellipse(centerX + 1.5, 54, 19, 4.6, 0, 0, Math.PI * 2);
+  context.ellipse(42, 57.3, 26.5, 4.2, 0.08, 0, Math.PI * 2);
   context.fill();
 
-  traceSuperellipse(
-    context,
-    centerX + 1.1,
-    centerY + 2.2,
-    outerRadius,
-    exponent,
-  );
+  traceCylinderSide(context);
   context.fillStyle = mixColor(color, 0, 0.32);
   context.fill();
 
-  traceSuperellipse(context, centerX, centerY, outerRadius, exponent);
+  context.lineWidth = 2;
+  context.strokeStyle = mixColor(color, 0, 0.48);
+  context.beginPath();
+  context.moveTo(14, 42);
+  context.bezierCurveTo(18, 49, 31, 52.5, 42.5, 52.5);
+  context.bezierCurveTo(55.5, 52.5, 65, 48.5, 68, 43);
+  context.stroke();
+
+  traceTopFace(context);
   context.fillStyle = `rgb(${color.join(" ")})`;
   context.fill();
 
-  context.lineWidth = 2.8;
-  context.lineCap = "round";
-  context.strokeStyle = "rgba(255, 255, 255, 0.46)";
+  context.lineWidth = 2;
+  context.strokeStyle = "rgba(255, 255, 255, 0.52)";
   context.beginPath();
-  context.arc(centerX - 1, centerY - 1, outerRadius - 4, Math.PI * 1.08, Math.PI * 1.62);
+  context.ellipse(37, 23.5, 20, 9.2, 0.16, Math.PI * 1.08, Math.PI * 1.68);
   context.stroke();
 
-  context.strokeStyle = "rgba(15, 23, 42, 0.2)";
+  context.globalCompositeOperation = "destination-out";
   context.beginPath();
-  context.arc(centerX + 1, centerY + 1, outerRadius - 3.5, Math.PI * 0.08, Math.PI * 0.62);
+  context.ellipse(41, 27.4, 9.8, 5.7, 0.16, 0, Math.PI * 2);
+  context.fill();
+  context.globalCompositeOperation = "source-over";
+  context.lineWidth = 2.4;
+  context.strokeStyle = mixColor(color, 0, 0.46);
+  context.beginPath();
+  context.ellipse(41, 27.4, 10.3, 6.1, 0.16, 0, Math.PI * 2);
   context.stroke();
-
-  if (holeRadius > 0) {
-    context.globalCompositeOperation = "destination-out";
-    context.beginPath();
-    context.arc(centerX, centerY, holeRadius, 0, Math.PI * 2);
-    context.fill();
-    context.globalCompositeOperation = "source-over";
-    context.lineWidth = 2.2;
-    context.strokeStyle = mixColor(color, 0, 0.4);
-    context.beginPath();
-    context.arc(centerX, centerY, holeRadius + 1, Math.PI * 0.08, Math.PI * 1.08);
-    context.stroke();
-    context.strokeStyle = mixColor(color, 255, 0.38);
-    context.beginPath();
-    context.arc(centerX, centerY, holeRadius + 0.6, Math.PI * 1.08, Math.PI * 1.7);
-    context.stroke();
-  }
 
   context.restore();
 }
@@ -124,7 +99,6 @@ function drawBead(
  */
 export function BeadPaletteSwatch({
   color,
-  compression,
   label,
   selected,
   onSelect,
@@ -138,8 +112,9 @@ export function BeadPaletteSwatch({
       typeof context.ellipse !== "function" ||
       typeof context.arc !== "function"
     ) return;
-    drawBead(context, color, compression);
-  }, [color, compression]);
+    if (typeof context.bezierCurveTo !== "function") return;
+    drawBead(context, color);
+  }, [color]);
 
   return (
     <button
@@ -153,8 +128,8 @@ export function BeadPaletteSwatch({
         ref={canvasRef}
         aria-hidden
         className="palette-swatch__bead"
-        data-bead-shape={compression >= 100 ? "solid" : "holed"}
-        width={64}
+        data-bead-view="angled-cylinder"
+        width={72}
         height={64}
       />
     </button>

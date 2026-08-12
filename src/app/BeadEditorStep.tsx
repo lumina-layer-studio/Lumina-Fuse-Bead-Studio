@@ -27,7 +27,7 @@ import {
 } from "../ui/panelPrimitives";
 import { BeadEditorWorkspace } from "./BeadEditorWorkspace";
 import { BeadCanvasViewport } from "./BeadCanvasViewport";
-import { BeadPaletteSwatch } from "./BeadPaletteSwatch";
+import { BeadPaletteStrip } from "./BeadPaletteStrip";
 import { BeadMatrixCanvas } from "./BeadMatrixCanvas";
 import { BeadFusionPreview } from "./BeadFusionPreview";
 import { BeadSourceCanvas } from "./BeadSourceCanvas";
@@ -62,23 +62,6 @@ interface BeadEditorStepProps {
     sourcePaletteIndex: number,
     colorEntryId: string,
   ): void;
-}
-
-function toHex(color: RgbColor): string {
-  return `#${color
-    .map((channel) => channel.toString(16).padStart(2, "0"))
-    .join("")}`;
-}
-
-function fromHex(value: string): RgbColor | null {
-  const match = /^#([0-9a-f]{6})$/i.exec(value);
-  if (!match) return null;
-  const number = Number.parseInt(match[1], 16);
-  return [
-    (number >> 16) & 255,
-    (number >> 8) & 255,
-    number & 255,
-  ];
 }
 
 function formatMillimeters(value: number): string {
@@ -346,49 +329,27 @@ export function BeadEditorStep({
   const paletteControls = (
     <div className="bead-editor-mode-content bead-editor-mode-content--edit">
       {previewColorControls}
-      <div className="bead-editor-palette-strip">
-        <span className="field-label">
-          {t("workshop.bead.paletteTitle")}
-        </span>
-        <div className="palette-row">
-          {project.palette.map((color, index) => (
-            <BeadPaletteSwatch
-              key={`${color.join("-")}-${index}`}
-              color={color}
-              compression={project.compression}
-              label={interpolate(t("workshop.bead.paletteColor"), {
-                index: index + 1,
-              })}
-              selected={state.activePaletteIndex === index}
-              onSelect={() =>
-                dispatch({ type: "set-palette", paletteIndex: index })
-              }
-            />
-          ))}
-          <label className="color-input">
-            <span>{t("workshop.bead.customColor")}</span>
-            <input
-              type="color"
-              aria-label={t("workshop.bead.customColor")}
-              value={toHex(
-                project.palette[state.activePaletteIndex] ??
-                  project.palette[0] ??
-                  ([0, 0, 0] as RgbColor),
-              )}
-              onChange={(event) => {
-                const color = fromHex(event.target.value);
-                if (color) {
-                  dispatch({
-                    type: "add-palette-color",
-                    color,
-                    updatedAt: new Date().toISOString(),
-                  });
-                }
-              }}
-            />
-          </label>
-        </div>
-      </div>
+      <BeadPaletteStrip
+        colors={project.palette}
+        activeIndex={state.activePaletteIndex}
+        label={t("workshop.bead.paletteTitle")}
+        colorLabel={(index) =>
+          interpolate(t("workshop.bead.paletteColor"), { index: index + 1 })
+        }
+        previousLabel={t("workshop.bead.palettePrevious")}
+        nextLabel={t("workshop.bead.paletteNext")}
+        addLabel={t("workshop.bead.customColor")}
+        onSelect={(paletteIndex) =>
+          dispatch({ type: "set-palette", paletteIndex })
+        }
+        onAdd={(color) =>
+          dispatch({
+            type: "add-palette-color",
+            color,
+            updatedAt: new Date().toISOString(),
+          })
+        }
+      />
     </div>
   );
 
