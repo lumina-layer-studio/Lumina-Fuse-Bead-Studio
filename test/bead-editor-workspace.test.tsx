@@ -16,6 +16,7 @@ const labels = {
 function renderWorkspace() {
   return render(
     <BeadEditorWorkspace
+      mode="edit"
       labels={labels}
       projectControls={<button type="button">图案操作</button>}
       workflowControls={<button type="button">编辑豆子</button>}
@@ -36,6 +37,7 @@ describe("BeadEditorWorkspace", () => {
 
     expect(canvasLayer).toHaveClass("bead-editor-workspace__canvas");
     expect(canvasLayer?.parentElement).toBe(workspace);
+    expect(workspace).toHaveAttribute("data-mode", "edit");
     expect(
       screen.getByRole("group", { name: labels.project }),
     ).toHaveClass("bead-editor-workspace__project");
@@ -80,6 +82,7 @@ describe("BeadEditorWorkspace", () => {
   it("omits the auxiliary layer when no 2D preview is supplied", () => {
     render(
       <BeadEditorWorkspace
+          mode="edit"
         labels={labels}
         projectControls={<span>项目</span>}
         workflowControls={<span>模式</span>}
@@ -100,6 +103,7 @@ describe("BeadEditorWorkspace", () => {
       const [expanded, setExpanded] = useState(false);
       return (
         <BeadEditorWorkspace
+          mode="edit"
           labels={labels}
           projectControls={<button type="button">图案操作</button>}
           workflowControls={<button type="button">编辑豆子</button>}

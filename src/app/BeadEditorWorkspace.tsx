@@ -10,6 +10,7 @@ export interface BeadEditorWorkspaceLabels {
 }
 
 export interface BeadEditorWorkspaceProps {
+  mode: "edit" | "fusion" | "print";
   labels: BeadEditorWorkspaceLabels;
   projectControls: ReactNode;
   workflowControls: ReactNode;
@@ -28,6 +29,7 @@ export interface BeadEditorWorkspaceProps {
  * the controls required by the active workflow.
  */
 export function BeadEditorWorkspace({
+  mode,
   labels,
   projectControls,
   workflowControls,
@@ -76,6 +78,7 @@ export function BeadEditorWorkspace({
       className="bead-editor-workspace"
       data-testid="bead-editor-workspace"
       data-has-tools={toolControls !== null}
+      data-mode={mode}
     >
       <div
         className="bead-editor-workspace__canvas"

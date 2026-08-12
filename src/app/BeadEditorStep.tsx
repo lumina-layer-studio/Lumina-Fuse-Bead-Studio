@@ -27,6 +27,7 @@ import {
 } from "../ui/panelPrimitives";
 import { BeadEditorWorkspace } from "./BeadEditorWorkspace";
 import { BeadCanvasViewport } from "./BeadCanvasViewport";
+import { BeadPaletteSwatch } from "./BeadPaletteSwatch";
 import { BeadMatrixCanvas } from "./BeadMatrixCanvas";
 import { BeadFusionPreview } from "./BeadFusionPreview";
 import { BeadSourceCanvas } from "./BeadSourceCanvas";
@@ -351,18 +352,15 @@ export function BeadEditorStep({
         </span>
         <div className="palette-row">
           {project.palette.map((color, index) => (
-            <button
+            <BeadPaletteSwatch
               key={`${color.join("-")}-${index}`}
-              type="button"
-              aria-label={interpolate(t("workshop.bead.paletteColor"), {
+              color={color}
+              compression={project.compression}
+              label={interpolate(t("workshop.bead.paletteColor"), {
                 index: index + 1,
               })}
-              aria-pressed={state.activePaletteIndex === index}
-              className="palette-swatch"
-              style={{
-                backgroundColor: `rgb(${color[0]} ${color[1]} ${color[2]})`,
-              }}
-              onClick={() =>
+              selected={state.activePaletteIndex === index}
+              onSelect={() =>
                 dispatch({ type: "set-palette", paletteIndex: index })
               }
             />
@@ -391,9 +389,6 @@ export function BeadEditorStep({
           </label>
         </div>
       </div>
-      <p className="editor-tool-hint" aria-live="polite">
-        {t(`workshop.bead.toolHint.${state.activeTool}`)}
-      </p>
     </div>
   );
 
@@ -585,6 +580,7 @@ export function BeadEditorStep({
 
   return (
     <BeadEditorWorkspace
+      mode={workbenchMode}
       labels={{
         project: t("workshop.bead.workspace.project"),
         workflow: t("workshop.bead.workspace.workflow"),
@@ -676,7 +672,7 @@ export function BeadEditorStep({
                   type="button"
                   aria-pressed={state.activeTool === tool}
                   className="segmented-control editor-tool-button"
-                  title={t(`workshop.bead.toolHint.${tool}`)}
+                  aria-description={t(`workshop.bead.toolHint.${tool}`)}
                   onClick={() => dispatch({ type: "set-tool", tool })}
                 >
                   <EditorToolIcon tool={tool} />

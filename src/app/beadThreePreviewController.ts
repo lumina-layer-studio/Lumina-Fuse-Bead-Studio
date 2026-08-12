@@ -476,8 +476,6 @@ class ThreeBeadPreviewController implements BeadThreePreviewController {
     if (
       baseline === null ||
       this.currentExactRevision === null ||
-      baseline.pressure !== 1 ||
-      model.pressure !== 1 ||
       baseline.projectId !== model.projectId ||
       baseline.rows !== model.rows ||
       baseline.columns !== model.columns ||

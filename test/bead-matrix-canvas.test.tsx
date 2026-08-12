@@ -88,4 +88,55 @@ describe("BeadMatrixCanvas", () => {
       expect(strokes[0]?.path[index]?.[1]).toBeCloseTo(point[1]);
     }
   });
+
+  it("keeps a full square inspection window when the selected cell is on an edge", () => {
+    vi.spyOn(
+      HTMLCanvasElement.prototype,
+      "getContext",
+    ).mockReturnValue(null);
+    const project = createBeadProject({
+      projectId: "edge-inspection-window",
+      moduleVersion: "1.0.0",
+      now: "2026-08-12T00:00:00.000Z",
+      rows: 10,
+      columns: 10,
+      palette: [[255, 255, 255]],
+      cells: Array.from({ length: 100 }, () => ({ kind: "empty" as const })),
+    });
+
+    const { getByRole, rerender } = render(
+      <BeadMatrixCanvas
+        project={project}
+        ariaLabel="inspection"
+        selectedCellIndex={0}
+        viewport={{ centerCellIndex: 0, radius: 2 }}
+      />,
+    );
+
+    expect(getByRole("img", { name: "inspection" })).toHaveAttribute(
+      "width",
+      "160",
+    );
+    expect(getByRole("img", { name: "inspection" })).toHaveAttribute(
+      "height",
+      "160",
+    );
+
+    rerender(
+      <BeadMatrixCanvas
+        project={project}
+        ariaLabel="inspection"
+        selectedCellIndex={99}
+        viewport={{ centerCellIndex: 99, radius: 2 }}
+      />,
+    );
+    expect(getByRole("img", { name: "inspection" })).toHaveAttribute(
+      "width",
+      "160",
+    );
+    expect(getByRole("img", { name: "inspection" })).toHaveAttribute(
+      "height",
+      "160",
+    );
+  });
 });

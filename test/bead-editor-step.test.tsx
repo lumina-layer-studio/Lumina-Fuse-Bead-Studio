@@ -127,6 +127,13 @@ describe("BeadEditorStep", () => {
       ),
     ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "放豆" })).toBeInTheDocument();
+    expect(screen.getByTestId("bead-editor-workspace")).toHaveAttribute(
+      "data-mode",
+      "edit",
+    );
+    expect(
+      screen.getByRole("button", { name: "颜色 1" }).querySelector("canvas"),
+    ).toHaveClass("palette-swatch__bead");
     expect(threePreviewCapture.editingEnabled).toBe(true);
     expect(threePreviewCapture.onPickCell).toEqual(expect.any(Function));
     expect(
@@ -134,6 +141,10 @@ describe("BeadEditorStep", () => {
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "调整熨烫" }));
+    expect(screen.getByTestId("bead-editor-workspace")).toHaveAttribute(
+      "data-mode",
+      "fusion",
+    );
     expect(
       screen.getByRole("img", { name: "可旋转的拼豆 3D 成品" }),
     ).toBe(threePreview);
@@ -826,10 +837,11 @@ describe("BeadEditorStep", () => {
       screen.getByRole("button", { name: "清除连片" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
-      screen.getByText(
-        "点击色块，一次清空与它上下左右相连的同色区域。",
-      ),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: "清除连片" }),
+    ).toHaveAttribute(
+      "aria-description",
+      "点击色块，一次清空与它上下左右相连的同色区域。",
+    );
     expect(screen.getByRole("button", { name: "撤销" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "重做" })).toBeDisabled();
 

@@ -1122,6 +1122,64 @@ describe("beadThreePreviewController resource lifecycle", () => {
     controller.dispose();
   });
 
+  it("keeps the 50% fused surface stable and previews only the affected cells", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const initial = makeProject(
+      [RED_CELL, RED_CELL, EMPTY_CELL],
+      { compression: 50, irregularity: 0 },
+    );
+    const painted = makeProject(
+      [RED_CELL, RED_CELL, BLUE_CELL],
+      { compression: 50, irregularity: 0 },
+    );
+    const exact = makeGridModel(1, 3);
+    exact.surfacePaths[0] = {
+      ...exact.surfacePaths[0]!,
+      d: "M 0 0 L 2 0 L 2 1 L 0 1 Z",
+    };
+
+    previewProject(controller, initial, 1);
+    flushFrame(0);
+    controller.update(exact, 1);
+    flushFrame(1);
+    flushFrame(2);
+    const exactMesh = findNamedObject<Mesh>(
+      sceneAdd,
+      "bead-preview-surface-0",
+    );
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    expect(exactMesh.visible).toBe(true);
+    expect(fastMesh.visible).toBe(false);
+
+    previewProject(controller, painted, 2);
+    flushFrame(10);
+
+    expect(exactMesh.visible).toBe(true);
+    expect(fastMesh.visible).toBe(true);
+    const material = exactMesh.material as MeshPhysicalMaterial;
+    const shader = {
+      uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: "#include <begin_vertex>",
+      fragmentShader: "#include <clipping_planes_fragment>",
+    };
+    material.onBeforeCompile(shader as never, {} as never);
+    const mask = shader.uniforms.beadEditMask?.value as {
+      image: { data: Uint8Array };
+    };
+    expect(Array.from(mask.image.data)).toEqual([0, 255, 255]);
+    expect(readInstanceMatrix(fastMesh, 0).elements[0]).toBe(0);
+    expect(readInstanceScale(fastMesh, 1).x).toBeGreaterThan(0);
+    expect(readInstanceScale(fastMesh, 2).x).toBeGreaterThan(0);
+    controller.dispose();
+  });
+
   it("keeps a 100% no-hole replacement seated while exact fusion catches up", () => {
     const sceneAdd = vi.spyOn(Scene.prototype, "add");
     const controller = createBeadThreePreviewController(
@@ -1449,7 +1507,7 @@ describe("beadThreePreviewController resource lifecycle", () => {
 
     expect(parse).not.toHaveBeenCalled();
     expect(fastMesh.visible).toBe(true);
-    expect(oldExact.visible).toBe(false);
+    expect(oldExact.visible).toBe(true);
     controller.dispose();
   });
 

@@ -48,11 +48,27 @@ function resolveBounds(
   }
   const row = Math.floor(viewport.centerCellIndex / project.columns);
   const column = viewport.centerCellIndex % project.columns;
+  const visibleRowCount = Math.min(
+    project.rows,
+    viewport.radius * 2 + 1,
+  );
+  const visibleColumnCount = Math.min(
+    project.columns,
+    viewport.radius * 2 + 1,
+  );
+  const startRow = Math.min(
+    Math.max(0, row - viewport.radius),
+    project.rows - visibleRowCount,
+  );
+  const startColumn = Math.min(
+    Math.max(0, column - viewport.radius),
+    project.columns - visibleColumnCount,
+  );
   return {
-    startRow: Math.max(0, row - viewport.radius),
-    endRow: Math.min(project.rows, row + viewport.radius + 1),
-    startColumn: Math.max(0, column - viewport.radius),
-    endColumn: Math.min(project.columns, column + viewport.radius + 1),
+    startRow,
+    endRow: startRow + visibleRowCount,
+    startColumn,
+    endColumn: startColumn + visibleColumnCount,
   };
 }
 

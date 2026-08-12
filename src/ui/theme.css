@@ -686,13 +686,24 @@ select:focus-visible,
 }
 
 .palette-swatch {
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  border: 2px solid var(--bead-border);
-  border-radius: 50%;
-  padding: 0;
+  position: relative;
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 1px;
+  background: transparent;
   cursor: pointer;
+}
+
+.palette-swatch__bead {
+  display: block;
+  width: 42px;
+  height: 42px;
+  pointer-events: none;
 }
 
 .palette-swatch[aria-pressed="true"] {
@@ -828,7 +839,7 @@ select:focus-visible,
   min-height: 100%;
   overflow: hidden;
   border-radius: 0;
-  padding: 76px 16px 156px 88px;
+  padding: 76px 16px 124px 88px;
 }
 
 .bead-editor-workspace[data-has-tools="false"]
@@ -989,12 +1000,14 @@ select:focus-visible,
 
 .bead-editor-workspace__tools {
   top: 78px;
-  bottom: 156px;
+  bottom: auto;
   left: 16px;
   display: flex;
   width: 64px;
+  height: auto;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 8px;
   overflow: hidden;
   padding: 8px 6px;
 }
@@ -1037,6 +1050,16 @@ select:focus-visible,
   padding: 12px 14px;
 }
 
+.bead-editor-workspace[data-mode="edit"]
+  .bead-editor-workspace__mode-dock {
+  right: auto;
+  left: calc(50% - 92px);
+  width: min(760px, calc(100% - 392px));
+  height: 96px;
+  transform: translateX(-50%);
+  padding: 8px 12px;
+}
+
 .bead-editor-workspace[data-has-tools="false"]
   .bead-editor-workspace__mode-dock {
   left: 16px;
@@ -1047,7 +1070,7 @@ select:focus-visible,
   width: 100%;
   min-width: 0;
   align-items: stretch;
-  gap: 16px;
+  gap: 12px;
 }
 
 .bead-editor-mode-content--edit > * {
@@ -1081,14 +1104,12 @@ select:focus-visible,
 .bead-editor-palette-strip .palette-row {
   flex-wrap: nowrap;
   overflow-x: auto;
-  padding: 3px;
+  padding: 1px;
+  scrollbar-width: none;
 }
 
-.bead-editor-mode-content--edit .editor-tool-hint {
-  width: min(24cqi, 260px);
-  min-height: auto;
-  align-self: center;
-  margin: 0;
+.bead-editor-palette-strip .palette-row::-webkit-scrollbar {
+  display: none;
 }
 
 .bead-editor-mode-content--fusion {
@@ -1135,8 +1156,8 @@ select:focus-visible,
 .bead-editor-workspace__auxiliary {
   right: 16px;
   bottom: 12px;
-  width: 244px;
-  height: 132px;
+  width: 260px;
+  height: 104px;
   overflow: hidden;
   padding: 8px;
 }
@@ -1155,7 +1176,8 @@ select:focus-visible,
   position: relative;
   display: grid;
   height: 100%;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
 }
 
@@ -1166,6 +1188,7 @@ select:focus-visible,
   justify-content: space-between;
   gap: 8px;
   font-size: 0.78rem;
+  grid-column: 1 / -1;
 }
 
 .bead-editor-auxiliary__header .segmented-control {
@@ -1180,6 +1203,7 @@ select:focus-visible,
 
 .bead-editor-workspace__auxiliary[data-expanded="true"] .bead-editor-auxiliary {
   grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .bead-editor-workspace__auxiliary[data-expanded="true"] .bead-editor-auxiliary__tabs {
@@ -1199,11 +1223,13 @@ select:focus-visible,
 }
 
 .bead-editor-auxiliary__inspection {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  width: 112px;
-  height: 94px;
+  position: static;
+  display: flex;
+  width: 52px;
+  height: auto;
+  aspect-ratio: 1;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
   border: 1px solid var(--bead-border);
   border-radius: 8px;
@@ -1212,8 +1238,10 @@ select:focus-visible,
 }
 
 .bead-editor-auxiliary__inspection .bead-canvas {
-  width: 100%;
-  height: 100%;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 100%;
   border: 0;
 }
 
@@ -1221,7 +1249,7 @@ select:focus-visible,
 .bead-editor-auxiliary__canvas > .bead-fusion-preview {
   width: auto;
   max-width: 100%;
-  height: 100%;
+  height: auto;
   max-height: 100%;
   border: 0;
   border-radius: 0;
@@ -1278,7 +1306,7 @@ select:focus-visible,
 
   .bead-editor-workspace__tools {
     top: 72px;
-    bottom: 152px;
+    bottom: auto;
     left: 8px;
     width: 56px;
   }
@@ -1291,6 +1319,14 @@ select:focus-visible,
   .bead-editor-workspace__mode-dock {
     right: 12px;
     left: 72px;
+  }
+
+  .bead-editor-workspace[data-mode="edit"]
+    .bead-editor-workspace__mode-dock {
+    right: 12px;
+    left: 72px;
+    width: auto;
+    transform: none;
   }
 
   .bead-editor-workspace__auxiliary {
@@ -1320,14 +1356,14 @@ select:focus-visible,
   }
 
   .bead-editor-workspace__canvas > .canvas-stage {
-    padding: 72px 8px 152px 72px;
+    padding: 72px 8px 120px 72px;
   }
 }
 
 @media (max-height: 680px) {
   .bead-editor-workspace__tools {
     top: 72px;
-    bottom: 144px;
+    bottom: auto;
     width: 112px;
   }
 
