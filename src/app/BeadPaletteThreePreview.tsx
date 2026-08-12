@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type RefObject,
 } from "react";
 
 import type { RgbColor } from "../domain/types";
@@ -21,6 +22,7 @@ export interface BeadPaletteThreePreviewProps {
   activeIndex: number;
   colorLabel(index: number): string;
   onSelect(index: number): void;
+  viewportRef?: RefObject<HTMLDivElement | null>;
   createRenderer?: (canvas: HTMLCanvasElement) => BeadPaletteThreeRenderer;
 }
 
@@ -33,10 +35,14 @@ export function BeadPaletteThreePreview({
   activeIndex,
   colorLabel,
   onSelect,
+  viewportRef,
   createRenderer = createBeadPaletteThreeRenderer,
 }: BeadPaletteThreePreviewProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const targetsRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<BeadPaletteThreeRenderer | null>(null);
+  const measureViewportRef = useRef<(() => void) | null>(null);
   const [unavailable, setUnavailable] = useState(false);
 
   useLayoutEffect(() => {
@@ -45,15 +51,72 @@ export function BeadPaletteThreePreview({
     try {
       const renderer = createRenderer(canvas);
       rendererRef.current = renderer;
-      renderer.update(colors);
+      const measureViewportAt = (scrollLeftPx: number) => {
+        const viewport = viewportRef?.current ?? rootRef.current?.parentElement;
+        const targets = targetsRef.current;
+        if (viewport == null || targets === null) return;
+        const buttons = targets.querySelectorAll<HTMLElement>(".palette-swatch");
+        const first = buttons[0];
+        const second = buttons[1];
+        const firstTargetCenterPx = first !== undefined && first.offsetWidth > 0
+          ? first.offsetLeft + first.offsetWidth / 2
+          : 26;
+        const measuredStep = first !== undefined && second !== undefined
+          ? second.offsetLeft + second.offsetWidth / 2 - firstTargetCenterPx
+          : 0;
+        const targetStepPx = measuredStep > 0 ? measuredStep : 40;
+        const widthPx = Math.max(1, viewport.clientWidth);
+        canvas.style.width = `${widthPx}px`;
+        renderer.setViewport({
+          scrollLeftPx,
+          widthPx,
+          heightPx: 48,
+          firstTargetCenterPx,
+          targetStepPx,
+        });
+      };
+      const measureViewport = () => {
+        const viewport = viewportRef?.current ?? rootRef.current?.parentElement;
+        if (viewport == null) return;
+        measureViewportAt(viewport.scrollLeft);
+      };
+      measureViewportRef.current = measureViewport;
+      measureViewport();
+      renderer.update(colors, activeIndex);
       setUnavailable(false);
       const ownerWindow = canvas.ownerDocument.defaultView;
-      const resize = () => {
-        renderer.resize();
+      const viewport = viewportRef?.current ?? rootRef.current?.parentElement;
+      let scrollFrame: number | null = null;
+      let latestScrollLeftPx = viewport?.scrollLeft ?? 0;
+      const scheduleViewportMeasure = (event: Event) => {
+        latestScrollLeftPx = event.currentTarget instanceof HTMLElement
+          ? event.currentTarget.scrollLeft
+          : viewport?.scrollLeft ?? 0;
+        if (scrollFrame !== null) return;
+        scrollFrame = ownerWindow?.requestAnimationFrame(() => {
+          scrollFrame = null;
+          measureViewportAt(latestScrollLeftPx);
+        }) ?? null;
+        if (scrollFrame === null) measureViewportAt(latestScrollLeftPx);
       };
-      ownerWindow?.addEventListener("resize", resize);
+      viewport?.addEventListener("scroll", scheduleViewportMeasure, {
+        passive: true,
+      });
+      const observer = typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measureViewport);
+      if (viewport != null) observer?.observe(viewport);
+      ownerWindow?.addEventListener("resize", measureViewport);
       return () => {
-        ownerWindow?.removeEventListener("resize", resize);
+        viewport?.removeEventListener("scroll", scheduleViewportMeasure);
+        if (scrollFrame !== null) {
+          ownerWindow?.cancelAnimationFrame(scrollFrame);
+        }
+        observer?.disconnect();
+        ownerWindow?.removeEventListener("resize", measureViewport);
+        if (measureViewportRef.current === measureViewport) {
+          measureViewportRef.current = null;
+        }
         if (rendererRef.current === renderer) rendererRef.current = null;
         renderer.dispose();
       };
@@ -62,14 +125,21 @@ export function BeadPaletteThreePreview({
       setUnavailable(true);
       return undefined;
     }
-  }, [createRenderer]);
+  }, [createRenderer, viewportRef]);
 
   useEffect(() => {
-    rendererRef.current?.update(colors);
-  }, [colors]);
+    rendererRef.current?.update(colors, activeIndex);
+    const ownerWindow = canvasRef.current?.ownerDocument.defaultView;
+    if (ownerWindow == null) return undefined;
+    const frame = ownerWindow.requestAnimationFrame(() => {
+      measureViewportRef.current?.();
+    });
+    return () => ownerWindow.cancelAnimationFrame(frame);
+  }, [activeIndex, colors]);
 
   return (
     <div
+      ref={rootRef}
       className="bead-palette-three-preview"
       data-testid="bead-palette-three-preview"
       data-unavailable={unavailable ? "true" : "false"}
@@ -79,7 +149,7 @@ export function BeadPaletteThreePreview({
         className="bead-palette-three-preview__canvas"
         aria-hidden
       />
-      <div className="bead-palette-three-preview__targets">
+      <div ref={targetsRef} className="bead-palette-three-preview__targets">
         {colors.map((color, index) => (
           <button
             key={index}

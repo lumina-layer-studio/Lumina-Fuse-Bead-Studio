@@ -688,9 +688,9 @@ select:focus-visible,
 .palette-swatch {
   position: relative;
   display: grid;
-  width: 54px;
+  width: 36px;
   height: 48px;
-  flex: 0 0 54px;
+  flex: 0 0 36px;
   place-items: center;
   border: 2px solid transparent;
   border-radius: 12px;
@@ -699,50 +699,21 @@ select:focus-visible,
   cursor: pointer;
 }
 
-.palette-swatch::before,
-.palette-swatch::after {
-  position: absolute;
-  left: 50%;
-  z-index: 2;
-  display: block;
-  content: "";
-  pointer-events: none;
-}
-
-.palette-swatch::before {
-  top: 2px;
-  width: 38px;
-  height: 40px;
-  border: 2px solid transparent;
-  border-radius: 48% 48% 42% 42% / 22% 22% 18% 18%;
-  transform: translateX(-50%);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
-}
-
-.palette-swatch::after {
-  bottom: 0;
-  width: 18px;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--bead-accent);
-  transform: translateX(-50%) scaleX(0);
-  transition: transform 120ms ease;
-}
-
 .bead-palette-three-preview {
   position: relative;
   width: max-content;
   height: 48px;
   flex: 0 0 auto;
-  padding-inline: 8px;
 }
 
 .bead-palette-three-preview__canvas {
-  position: absolute;
+  position: sticky;
+  left: 0;
   z-index: 0;
-  width: 100%;
-  height: 100%;
-  inset: 0;
+  display: block;
+  height: 48px;
+  margin-bottom: -48px;
+  color: var(--bead-accent);
   pointer-events: none;
 }
 
@@ -750,7 +721,8 @@ select:focus-visible,
   position: relative;
   z-index: 1;
   display: flex;
-  gap: 8px;
+  gap: 4px;
+  padding-inline: 8px;
 }
 
 .bead-palette-three-preview__targets .palette-swatch {
@@ -768,13 +740,9 @@ select:focus-visible,
   box-shadow: none;
 }
 
-.palette-swatch[aria-pressed="true"]::before {
+.bead-palette-three-preview[data-unavailable="true"]
+  .palette-swatch[aria-pressed="true"] {
   border-color: var(--bead-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bead-surface-strong) 88%, transparent);
-}
-
-.palette-swatch[aria-pressed="true"]::after {
-  transform: translateX(-50%) scaleX(1);
 }
 
 .color-input {

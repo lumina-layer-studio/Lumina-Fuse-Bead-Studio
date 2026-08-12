@@ -80,16 +80,13 @@ describe("Workshop theme contract", () => {
       /\.bead-palette-three-preview\s*{[^}]*position:\s*relative;[^}]*height:\s*48px;/,
     );
     expect(css).toMatch(
-      /\.bead-palette-three-preview__canvas\s*{[^}]*position:\s*absolute;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*pointer-events:\s*none;/,
+      /\.bead-palette-three-preview__canvas\s*{[^}]*position:\s*sticky;[^}]*left:\s*0;[^}]*height:\s*48px;[^}]*pointer-events:\s*none;/,
     );
     expect(css).toMatch(
-      /\.bead-palette-three-preview\s*{[^}]*padding-inline:\s*8px;/,
+      /\.bead-palette-three-preview__targets\s*{[^}]*gap:\s*4px;[^}]*padding-inline:\s*8px;/,
     );
-    expect(css).toMatch(
-      /\.palette-swatch\[aria-pressed="true"\]::before\s*{[^}]*border-color:\s*var\(--bead-accent\);/,
-    );
-    expect(css).toMatch(
-      /\.palette-swatch\[aria-pressed="true"\]::after\s*{[^}]*transform:\s*translateX\(-50%\) scaleX\(1\);/,
+    expect(css).not.toMatch(
+      /\.palette-swatch\[aria-pressed="true"\]::(?:before|after)/,
     );
     expect(css).toMatch(
       /\.palette-swatch\[aria-pressed="true"\]\s*{[^}]*border-color:\s*transparent;[^}]*box-shadow:\s*none;/,

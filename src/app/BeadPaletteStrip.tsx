@@ -157,6 +157,7 @@ export function BeadPaletteStrip({
             activeIndex={activeIndex}
             colorLabel={colorLabel}
             onSelect={onSelect}
+            viewportRef={scrollerRef}
           />
         </div>
         <button

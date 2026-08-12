@@ -1,10 +1,12 @@
 import {
   AmbientLight,
+  BackSide,
   Color,
   DirectionalLight,
   ExtrudeGeometry,
   Group,
   Mesh,
+  MeshBasicMaterial,
   MeshPhysicalMaterial,
   OrthographicCamera,
   Path,
@@ -22,12 +24,18 @@ const BEAD_HEIGHT = 1.12;
 const BEAD_SEGMENTS = 32;
 const BEAD_SPACING = 1.35;
 const BEAD_VERTICAL_VIEW = 1.9;
-const MAX_BACKING_WIDTH = 8192;
+const MAX_DEVICE_PIXEL_RATIO = 2;
 
-function resolvePaletteFrame(colorsLength: number) {
-  const span = Math.max(1, (colorsLength - 1) * BEAD_SPACING + 1);
-  const centerX = Math.max(0, (colorsLength - 1) * BEAD_SPACING / 2);
-  return { span, centerX };
+/**
+ * 色板滚动视口与语义点击目标之间的像素映射。
+ * Pixel mapping between the palette viewport and its semantic hit targets.
+ */
+export interface BeadPaletteViewport {
+  scrollLeftPx: number;
+  widthPx: number;
+  heightPx: number;
+  firstTargetCenterPx: number;
+  targetStepPx: number;
 }
 
 /**
@@ -35,8 +43,8 @@ function resolvePaletteFrame(colorsLength: number) {
  * Minimal lifecycle for the shared 3D palette renderer.
  */
 export interface BeadPaletteThreeRenderer {
-  update(colors: readonly RgbColor[]): void;
-  resize(): void;
+  update(colors: readonly RgbColor[], activeIndex: number): void;
+  setViewport(viewport: BeadPaletteViewport): void;
   dispose(): void;
 }
 
@@ -84,7 +92,17 @@ class ThreeBeadPaletteRenderer implements BeadPaletteThreeRenderer {
   private readonly beadGroup = new Group();
   private readonly geometry = createUprightBeadGeometry();
   private readonly meshes: Array<Mesh<ExtrudeGeometry, MeshPhysicalMaterial>> = [];
+  private readonly selectionMaterial: MeshBasicMaterial;
+  private readonly selectionMesh: Mesh<ExtrudeGeometry, MeshBasicMaterial>;
   private colors: readonly RgbColor[] = [];
+  private activeIndex = -1;
+  private viewport: BeadPaletteViewport = {
+    scrollLeftPx: 0,
+    widthPx: 1,
+    heightPx: 48,
+    firstTargetCenterPx: 0,
+    targetStepPx: 1,
+  };
   private disposed = false;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -96,8 +114,28 @@ class ThreeBeadPaletteRenderer implements BeadPaletteThreeRenderer {
     });
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.setClearColor(0x000000, 0);
+    const computedStyle = this.canvas.ownerDocument.defaultView
+      ?.getComputedStyle(this.canvas);
+    const accent = computedStyle
+      ?.getPropertyValue("--bead-accent")
+      .trim();
+    const cssColor = computedStyle?.color;
+    const selectionColor = accent ||
+      (cssColor?.startsWith("rgb") ? cssColor : "#2563eb");
+    this.selectionMaterial = new MeshBasicMaterial({
+      color: new Color().setStyle(selectionColor),
+      side: BackSide,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    this.selectionMesh = new Mesh(this.geometry, this.selectionMaterial);
+    this.selectionMesh.name = "bead-palette-selection-outline";
+    this.selectionMesh.scale.set(1.16, 1.08, 1.16);
+    this.selectionMesh.visible = false;
+    this.selectionMesh.renderOrder = -1;
     this.scene.add(this.camera);
     this.scene.add(this.beadGroup);
+    this.beadGroup.add(this.selectionMesh);
     this.scene.add(new AmbientLight(0xffffff, 1.45));
     const keyLight = new DirectionalLight(0xffffff, 3.1);
     keyLight.position.set(-3, 5, 6);
@@ -107,10 +145,10 @@ class ThreeBeadPaletteRenderer implements BeadPaletteThreeRenderer {
     this.scene.add(rimLight);
   }
 
-  update(colors: readonly RgbColor[]): void {
+  update(colors: readonly RgbColor[], activeIndex: number): void {
     if (this.disposed) return;
     this.colors = colors;
-    this.resize();
+    this.activeIndex = activeIndex;
     while (this.meshes.length < colors.length) {
       const material = new MeshPhysicalMaterial({
         color: 0xffffff,
@@ -134,47 +172,47 @@ class ThreeBeadPaletteRenderer implements BeadPaletteThreeRenderer {
         new Color().setStyle(`rgb(${color[0]}, ${color[1]}, ${color[2]})`),
       );
     }
-    const { span, centerX } = resolvePaletteFrame(colors.length);
+    const activeMesh = this.meshes[activeIndex];
+    this.selectionMesh.visible = activeMesh?.visible === true;
+    if (this.selectionMesh.visible) {
+      this.selectionMesh.position.copy(activeMesh.position);
+    }
+    this.renderViewport();
+  }
+
+  setViewport(viewport: BeadPaletteViewport): void {
+    if (this.disposed) return;
+    this.viewport = {
+      scrollLeftPx: Math.max(0, viewport.scrollLeftPx),
+      widthPx: Math.max(1, viewport.widthPx),
+      heightPx: Math.max(1, viewport.heightPx),
+      firstTargetCenterPx: viewport.firstTargetCenterPx,
+      targetStepPx: Math.max(1, viewport.targetStepPx),
+    };
+    this.renderViewport();
+  }
+
+  private renderViewport(): void {
+    if (this.disposed) return;
+    const width = Math.max(1, Math.round(this.viewport.widthPx));
+    const height = Math.max(1, Math.round(this.viewport.heightPx));
+    const devicePixelRatio = this.canvas.ownerDocument.defaultView
+      ?.devicePixelRatio ?? 1;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, MAX_DEVICE_PIXEL_RATIO));
+    this.renderer.setSize(width, height, false);
+    const pixelsPerWorldUnit = this.viewport.targetStepPx / BEAD_SPACING;
+    const left = (this.viewport.scrollLeftPx -
+      this.viewport.firstTargetCenterPx) / pixelsPerWorldUnit;
+    const right = left + width / pixelsPerWorldUnit;
+    const centerX = (left + right) / 2;
+    const halfWidth = (right - left) / 2;
     this.camera.position.set(centerX, 3.4, 7.4);
     this.camera.lookAt(centerX, 0, 0);
-    const aspect = Math.max(this.canvas.clientWidth, 1) /
-      Math.max(this.canvas.clientHeight, 1);
-    const horizontalView = Math.max(span + 0.4, BEAD_VERTICAL_VIEW * aspect);
-    this.camera.left = centerX - horizontalView / 2;
-    this.camera.right = centerX + horizontalView / 2;
+    this.camera.left = -halfWidth;
+    this.camera.right = halfWidth;
     this.camera.top = BEAD_VERTICAL_VIEW / 2;
     this.camera.bottom = -BEAD_VERTICAL_VIEW / 2;
     this.camera.updateProjectionMatrix();
-    this.renderer.render(this.scene, this.camera);
-  }
-
-  resize(): void {
-    if (this.disposed) return;
-    const width = Math.max(1, Math.round(this.canvas.clientWidth));
-    const height = Math.max(1, Math.round(this.canvas.clientHeight));
-    const devicePixelRatio = this.canvas.ownerDocument.defaultView
-      ?.devicePixelRatio ?? 1;
-    this.renderer.setPixelRatio(Math.min(
-      devicePixelRatio,
-      1.5,
-      MAX_BACKING_WIDTH / width,
-    ));
-    this.renderer.setSize(width, height, false);
-    if (this.colors.length > 0) {
-      const { span, centerX } = resolvePaletteFrame(this.colors.length);
-      this.camera.position.set(centerX, 3.4, 7.4);
-      this.camera.lookAt(centerX, 0, 0);
-      const aspect = width / height;
-      const horizontalView = Math.max(
-        span + 0.4,
-        BEAD_VERTICAL_VIEW * aspect,
-      );
-      this.camera.left = centerX - horizontalView / 2;
-      this.camera.right = centerX + horizontalView / 2;
-      this.camera.top = BEAD_VERTICAL_VIEW / 2;
-      this.camera.bottom = -BEAD_VERTICAL_VIEW / 2;
-      this.camera.updateProjectionMatrix();
-    }
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -186,6 +224,8 @@ class ThreeBeadPaletteRenderer implements BeadPaletteThreeRenderer {
       mesh.material.dispose();
     }
     this.meshes.length = 0;
+    this.beadGroup.remove(this.selectionMesh);
+    this.selectionMaterial.dispose();
     this.geometry.dispose();
     this.scene.remove(this.camera, this.beadGroup);
     this.renderer.dispose();
