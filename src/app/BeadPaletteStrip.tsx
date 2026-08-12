@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import type { RgbColor } from "../domain/types";
-import { BeadPaletteSwatch } from "./BeadPaletteSwatch";
+import { BeadPaletteThreePreview } from "./BeadPaletteThreePreview";
 
 /**
  * 豆子色板横向导航所需的受控属性。
@@ -93,15 +93,12 @@ export function BeadPaletteStrip({
           className="palette-row"
           data-testid="bead-palette-scroll"
         >
-          {colors.map((color, index) => (
-            <BeadPaletteSwatch
-              key={`${color.join("-")}-${index}`}
-              color={color}
-              label={colorLabel(index)}
-              selected={activeIndex === index}
-              onSelect={() => onSelect(index)}
-            />
-          ))}
+          <BeadPaletteThreePreview
+            colors={colors}
+            activeIndex={activeIndex}
+            colorLabel={colorLabel}
+            onSelect={onSelect}
+          />
         </div>
         <button
           type="button"

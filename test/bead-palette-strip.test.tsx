@@ -3,9 +3,43 @@ import { describe, expect, it, vi } from "vitest";
 
 import { BeadPaletteStrip } from "../src/app/BeadPaletteStrip";
 
+const palettePreviewCapture = vi.hoisted(() => ({
+  colors: [] as Array<readonly [number, number, number]>,
+}));
+
+vi.mock("../src/app/BeadPaletteThreePreview", () => ({
+  BeadPaletteThreePreview: ({
+    colors,
+    colorLabel,
+    activeIndex,
+    onSelect,
+  }: {
+    colors: Array<readonly [number, number, number]>;
+    colorLabel(index: number): string;
+    activeIndex: number;
+    onSelect(index: number): void;
+  }) => {
+    palettePreviewCapture.colors = colors;
+    return (
+      <div data-testid="bead-palette-three-preview">
+        {colors.map((_, index) => (
+          <button
+            key={index}
+            type="button"
+            aria-label={colorLabel(index)}
+            aria-pressed={activeIndex === index}
+            data-bead-view="shared-webgl-upright-cylinder"
+            onClick={() => onSelect(index)}
+          />
+        ))}
+      </div>
+    );
+  },
+}));
+
 describe("BeadPaletteStrip", () => {
   it("turns vertical wheel input into horizontal palette navigation", () => {
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const onSelect = vi.fn();
     render(
       <BeadPaletteStrip
         colors={[[230, 40, 50], [20, 120, 210]]}
@@ -15,12 +49,24 @@ describe("BeadPaletteStrip", () => {
         previousLabel="查看前面的颜色"
         nextLabel="查看更多颜色"
         addLabel="添加自定义颜色"
-        onSelect={vi.fn()}
+        onSelect={onSelect}
         onAdd={vi.fn()}
       />,
     );
 
     const scroller = screen.getByTestId("bead-palette-scroll");
+    expect(
+      screen.getByTestId("bead-palette-three-preview"),
+    ).toBeInTheDocument();
+    expect(palettePreviewCapture.colors).toEqual([
+      [230, 40, 50],
+      [20, 120, 210],
+    ]);
+    expect(
+      screen.getByRole("button", { name: "颜色 1" }),
+    ).toHaveAttribute("data-bead-view", "shared-webgl-upright-cylinder");
+    fireEvent.click(screen.getByRole("button", { name: "颜色 2" }));
+    expect(onSelect).toHaveBeenCalledWith(1);
     Object.defineProperty(scroller, "scrollWidth", { value: 900 });
     Object.defineProperty(scroller, "clientWidth", { value: 240 });
     scroller.scrollLeft = 15;
@@ -40,7 +86,6 @@ describe("BeadPaletteStrip", () => {
   });
 
   it("keeps adding a color pinned outside the scrollable swatches", () => {
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const onAdd = vi.fn();
     render(
       <BeadPaletteStrip

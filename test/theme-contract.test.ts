@@ -77,7 +77,10 @@ describe("Workshop theme contract", () => {
       /\.bead-editor-auxiliary__inspection\s*{[^}]*position:\s*static;[^}]*width:\s*96px;[^}]*height:\s*96px;[^}]*aspect-ratio:\s*1;/,
     );
     expect(css).toMatch(
-      /\.palette-swatch__bead\s*{[^}]*width:\s*48px;[^}]*height:\s*43px;/,
+      /\.bead-palette-three-preview\s*{[^}]*position:\s*relative;[^}]*height:\s*48px;/,
+    );
+    expect(css).toMatch(
+      /\.bead-palette-three-preview__canvas\s*{[^}]*position:\s*absolute;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*pointer-events:\s*none;/,
     );
     expect(floatingWorkspace).toMatch(
       /\.bead-editor-palette-strip__body\s*{[^}]*display:\s*flex;[^}]*min-width:\s*0;[^}]*gap:\s*8px;/,

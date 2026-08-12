@@ -132,8 +132,8 @@ describe("BeadEditorStep", () => {
       "edit",
     );
     expect(
-      screen.getByRole("button", { name: "颜色 1" }).querySelector("canvas"),
-    ).toHaveClass("palette-swatch__bead");
+      screen.getByRole("button", { name: "颜色 1" }),
+    ).toHaveAttribute("data-bead-view", "shared-webgl-upright-cylinder");
     expect(threePreviewCapture.editingEnabled).toBe(true);
     expect(threePreviewCapture.onPickCell).toEqual(expect.any(Function));
     expect(
