@@ -11,6 +11,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  BEAD_EXIT_ANIMATION_MS,
   BEAD_PLACEMENT_ANIMATION_MS,
   createBeadFastPreviewLayer,
   resolveFastBeadSuperellipseExponent,
@@ -456,6 +457,44 @@ describe("persistent fast bead preview layer", () => {
         current.position.y + blue.heightMm * current.scale.y / 2,
       ).toBeGreaterThan(blue.board.pegHeightMm);
     }
+  });
+
+  it("cross-fades a 100% no-hole replacement without a centered outgoing bead", () => {
+    const scene = new Scene();
+    const layer = createBeadFastPreviewLayer(scene, false);
+    const red = makeModel([RED], {
+      compression: 100,
+      irregularity: 0,
+    });
+    const blue = makeModel([BLUE], {
+      compression: 100,
+      irregularity: 0,
+    });
+    const startedAt = 100;
+
+    layer.update(red, 1, 0);
+    layer.update(blue, 2, startedAt);
+
+    const mesh = fastMesh(scene);
+    const outgoing = outgoingMesh(scene);
+    expectHidden(outgoing, 0);
+    expectColorClose(
+      readColor(mesh, 0),
+      new Color().setStyle("rgb(239, 56, 72)"),
+    );
+
+    layer.advance(startedAt + BEAD_EXIT_ANIMATION_MS / 2);
+    const midway = readColor(mesh, 0);
+    const redLinear = new Color().setStyle("rgb(239, 56, 72)");
+    const blueLinear = new Color().setStyle("rgb(40, 114, 224)");
+    expect(midway.r).toBeLessThan(redLinear.r);
+    expect(midway.r).toBeGreaterThan(blueLinear.r);
+    expect(midway.b).toBeGreaterThan(redLinear.b);
+    expect(midway.b).toBeLessThan(blueLinear.b);
+
+    layer.advance(startedAt + BEAD_EXIT_ANIMATION_MS);
+    expectColorClose(readColor(mesh, 0), blueLinear);
+    expectHidden(outgoing, 0);
   });
 
   it("lifts an erased bead from its current animated pose", () => {

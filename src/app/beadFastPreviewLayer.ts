@@ -85,6 +85,8 @@ interface PlacementAnimation {
   heightMm: number;
   dropHeightMm: number;
   keepSeatedFootprint: boolean;
+  colorFrom: Color | null;
+  colorTo: Color | null;
 }
 
 interface ExitAnimation {
@@ -406,11 +408,32 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
               model.heightMm,
             );
           } else {
-            this.startExit(slot.cellIndex, now, model);
-            outgoingMatrixDirty = true;
-            outgoingColorDirty = true;
-            this.writeColor(mesh, slot.cellIndex, slot.color);
-            this.startPlacement(mesh, slot, model, now, true);
+            const keepSeatedFootprint = model.holeRadiusMm === 0;
+            if (keepSeatedFootprint) {
+              mesh.getColorAt(slot.cellIndex, this.instanceColor);
+              const previousColor = this.instanceColor.clone();
+              this.exits.delete(slot.cellIndex);
+              this.writeHiddenMatrix(
+                outgoingMesh,
+                slot.cellIndex,
+                slot,
+              );
+              outgoingMatrixDirty = true;
+              this.startPlacement(
+                mesh,
+                slot,
+                model,
+                now,
+                true,
+                previousColor,
+              );
+            } else {
+              this.startExit(slot.cellIndex, now, model);
+              outgoingMatrixDirty = true;
+              outgoingColorDirty = true;
+              this.writeColor(mesh, slot.cellIndex, slot.color);
+              this.startPlacement(mesh, slot, model, now, true);
+            }
           }
           colorDirty = true;
           matrixDirty = true;
@@ -473,6 +496,7 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
     }
 
     let matrixDirty = false;
+    let colorDirty = false;
     for (const [cellIndex, animation] of this.animations) {
       const elapsedMs = Math.max(0, now - animation.startedAt);
       if (elapsedMs >= BEAD_PLACEMENT_ANIMATION_MS) {
@@ -491,9 +515,21 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
           elapsedMs,
         );
       }
+      if (animation.colorFrom !== null && animation.colorTo !== null) {
+        const colorProgress = easeOutCubic(
+          elapsedMs / BEAD_EXIT_ANIMATION_MS,
+        );
+        this.instanceColor.lerpColors(
+          animation.colorFrom,
+          animation.colorTo,
+          colorProgress,
+        );
+        this.mesh.setColorAt(cellIndex, this.instanceColor);
+        colorDirty = true;
+      }
       matrixDirty = true;
     }
-    this.flushChanges(this.mesh, matrixDirty, false);
+    this.flushChanges(this.mesh, matrixDirty, colorDirty);
     let outgoingMatrixDirty = false;
     for (const [cellIndex, exit] of this.exits) {
       const elapsedMs = Math.max(0, now - exit.startedAt);
@@ -644,7 +680,21 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
     model: FastBeadPreviewModel,
     now: number,
     replacing = false,
+    replacementColorFrom: Color | null = null,
   ): void {
+    const keepSeatedFootprint = replacing && model.holeRadiusMm === 0;
+    let colorFrom: Color | null = null;
+    let colorTo: Color | null = null;
+    if (keepSeatedFootprint && mesh.instanceColor !== null) {
+      colorFrom = replacementColorFrom?.clone() ?? null;
+      if (colorFrom === null) {
+        mesh.getColorAt(slot.cellIndex, this.instanceColor);
+        colorFrom = this.instanceColor.clone();
+      }
+      const [red, green, blue] = slot.color ?? [0, 0, 0];
+      colorTo = new Color().setStyle(`rgb(${red}, ${green}, ${blue})`);
+      mesh.setColorAt(slot.cellIndex, colorFrom);
+    }
     const animation = {
       startedAt: now,
       slot: {
@@ -656,7 +706,9 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
         model.heightMm * 1.8,
         model.outerRadiusMm * 0.7,
       ),
-      keepSeatedFootprint: replacing && model.holeRadiusMm === 0,
+      keepSeatedFootprint,
+      colorFrom,
+      colorTo,
     } satisfies PlacementAnimation;
     this.animations.set(slot.cellIndex, animation);
     this.writeAnimatedMatrix(mesh, slot.cellIndex, animation, 0);
