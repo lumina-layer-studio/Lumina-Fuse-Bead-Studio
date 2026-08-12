@@ -746,6 +746,51 @@ describe("BeadEditorStep", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps project actions visible and groups review controls with the 2D check", () => {
+    const onNewProject = vi.fn();
+    const onReturnCalibration = vi.fn();
+    const dispatch = vi.fn();
+    render(
+      <BeadEditorStep
+        state={createBeadEditorState(project())}
+        sourceRaster={{
+          width: 2,
+          height: 2,
+          data: new Uint8ClampedArray(16),
+        }}
+        translate={t}
+        dispatch={dispatch}
+        onNewProject={onNewProject}
+        onReturnCalibration={onReturnCalibration}
+      />,
+    );
+
+    const projectGroup = screen.getByRole("group", { name: "当前图案" });
+    expect(
+      within(projectGroup).getByRole("button", { name: "返回校准" }),
+    ).toBeVisible();
+    expect(
+      within(projectGroup).getByRole("button", { name: "新建图纸" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("group", { name: "图案操作" }),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector(".bead-editor-project-menu")).toBeNull();
+
+    const auxiliary = screen.getByRole("region", { name: "2D 校对" });
+    expect(within(auxiliary).getByText("待复核 2 / 共 2")).toBeVisible();
+    fireEvent.click(
+      within(auxiliary).getByRole("button", { name: "下一个待复核格" }),
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "select-issue",
+      issueIndex: 1,
+    });
+    expect(
+      within(auxiliary).getByRole("checkbox", { name: "显示网格" }),
+    ).toBeVisible();
+  });
+
   it("offers visible compression anchors without changing cells or pitch", () => {
     function Harness() {
       const [state, dispatch] = useReducer(

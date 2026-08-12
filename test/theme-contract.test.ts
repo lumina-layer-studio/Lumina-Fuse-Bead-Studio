@@ -62,7 +62,20 @@ describe("Workshop theme contract", () => {
       /\.bead-editor-workspace__tools\s*{[^}]*bottom:\s*auto;[^}]*justify-content:\s*flex-start;/,
     );
     expect(floatingWorkspace).toMatch(
-      /\.bead-editor-project-control\s*{[^}]*padding:\s*6px\s+8px\s+6px\s+48px;/,
+      /\.bead-editor-project-control\s*{[^}]*padding:\s*5px\s+6px\s+5px\s+48px;/,
+    );
+    expect(floatingWorkspace).toMatch(
+      /\.bead-editor-project-actions\s*{[^}]*display:\s*flex;[^}]*gap:\s*4px;/,
+    );
+    expect(floatingWorkspace).not.toMatch(/\.bead-editor-project-menu/);
+    expect(floatingWorkspace).toMatch(
+      /\.bead-editor-auxiliary__review\s*{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*gap:\s*4px;/,
+    );
+    expect(floatingWorkspace).toMatch(
+      /\.bead-editor-workspace__auxiliary\s*{[^}]*width:\s*340px;/,
+    );
+    expect(floatingWorkspace).toMatch(
+      /\.bead-editor-auxiliary__header\s*>\s*strong\s*{[^}]*white-space:\s*nowrap;/,
     );
     expect(floatingWorkspace).toMatch(
       /\.bead-editor-workspace__mode-dock\s*{[\s\S]*?right:\s*272px;[\s\S]*?bottom:\s*12px;[\s\S]*?left:\s*88px;[\s\S]*?overflow-y:\s*hidden;/,
@@ -71,7 +84,7 @@ describe("Workshop theme contract", () => {
       /\.bead-editor-workspace\[data-mode="edit"\]\s+\.bead-editor-workspace__mode-dock\s*{[^}]*left:\s*calc\(50%\s*-\s*92px\);[^}]*width:\s*min\(760px,[^}]*height:\s*96px;[^}]*transform:\s*translateX\(-50%\);/,
     );
     expect(floatingWorkspace).toMatch(
-      /\.bead-editor-workspace__auxiliary\s*{[\s\S]*?right:\s*16px;[\s\S]*?bottom:\s*12px;[\s\S]*?width:\s*320px;[\s\S]*?height:\s*154px;/,
+      /\.bead-editor-workspace__auxiliary\s*{[\s\S]*?right:\s*16px;[\s\S]*?bottom:\s*12px;[\s\S]*?width:\s*340px;[\s\S]*?height:\s*154px;/,
     );
     expect(floatingWorkspace).toMatch(
       /\.bead-editor-auxiliary__inspection\s*{[^}]*position:\s*static;[^}]*width:\s*96px;[^}]*height:\s*96px;[^}]*aspect-ratio:\s*1;/,
@@ -99,6 +112,9 @@ describe("Workshop theme contract", () => {
     );
     expect(floatingWorkspace).toMatch(
       /@container\s+bead-editor-workspace\s*\(max-width:\s*760px\)[\s\S]*?\.bead-editor-workspace__topbar\s*{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto;[\s\S]*?\.bead-editor-workspace__output\s+\.button\s*{[^}]*width:\s*42px;[^}]*height:\s*42px;[\s\S]*?\.bead-editor-workspace__output\s+\.button\s*>\s*span:last-child\s*{[^}]*display:\s*none;[\s\S]*?\.bead-editor-output-button__compact\s*{[^}]*display:\s*inline;[^}]*white-space:\s*nowrap;[\s\S]*?\.bead-editor-workspace__auxiliary\s*{[^}]*width:\s*46px;[^}]*height:\s*42px;[\s\S]*?\.bead-editor-workspace__auxiliary\[data-expanded="true"\]\s*{[^}]*left:\s*72px;[^}]*height:\s*auto;/,
+    );
+    expect(floatingWorkspace).toMatch(
+      /@container\s+bead-editor-workspace\s*\(max-width:\s*760px\)[\s\S]*?\.bead-editor-project-control__title,[\s\S]*?\.bead-editor-project-control__size\s*{[^}]*display:\s*none;[\s\S]*?\.bead-editor-project-actions\s+\.button\s*{[^}]*min-width:\s*42px;[^}]*min-height:\s*42px;/,
     );
     expect(floatingWorkspace).not.toMatch(
       /@container\s+bead-editor-workspace\s*\(max-width:\s*760px\)[\s\S]*?\.bead-editor-workspace__(?:project|auxiliary)\s*{[^}]*display:\s*none;/,

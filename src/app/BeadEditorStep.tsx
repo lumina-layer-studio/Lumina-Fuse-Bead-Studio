@@ -552,60 +552,30 @@ export function BeadEditorStep({
       }}
       projectControls={
         <div className="bead-editor-project-control">
-          <span className="bead-editor-project-control__title">
-            {t("workshop.bead.workspace.untitled")}
+          <span className="bead-editor-project-control__identity">
+            <span className="bead-editor-project-control__title">
+              {t("workshop.bead.workspace.untitled")}
+            </span>
+            <span className="bead-editor-project-control__size">
+              {project.columns} × {project.rows}
+            </span>
           </span>
-          <span className="bead-editor-project-control__size">
-            {project.columns} × {project.rows}
-          </span>
-          <details className="bead-editor-project-menu">
-            <summary aria-label={t("workshop.bead.workspace.projectMenu")}>⋮</summary>
-            <div className="bead-editor-project-menu__content">
-              {sourceRaster !== null && onReturnCalibration ? (
-                <Button
-                  label={t("workshop.bead.returnCalibration")}
-                  variant="secondary"
-                  size="small"
-                  onClick={onReturnCalibration}
-                />
-              ) : null}
+          <span className="bead-editor-project-actions">
+            {sourceRaster !== null && onReturnCalibration ? (
               <Button
-                label={t("workshop.bead.newProject")}
+                label={t("workshop.bead.returnCalibration")}
                 variant="secondary"
                 size="small"
-                onClick={onNewProject}
+                onClick={onReturnCalibration}
               />
-              <p className="review-summary">
-                {interpolate(t("workshop.bead.reviewSummary"), {
-                  pending: unresolvedIssueIndices.length,
-                  total: project.confidenceIssues.length,
-                })}
-              </p>
-              <div className="control-row">
-                <button
-                  type="button"
-                  className="segmented-control"
-                  disabled={unresolvedIssueIndices.length === 0}
-                  onClick={() => selectIssue(-1)}
-                >
-                  {t("workshop.bead.previousIssue")}
-                </button>
-                <button
-                  type="button"
-                  className="segmented-control"
-                  disabled={unresolvedIssueIndices.length === 0}
-                  onClick={() => selectIssue(1)}
-                >
-                  {t("workshop.bead.nextIssue")}
-                </button>
-              </div>
-              <Checkbox
-                label={t("workshop.bead.showGrid")}
-                checked={showGrid}
-                onChange={setShowGrid}
-              />
-            </div>
-          </details>
+            ) : null}
+            <Button
+              label={t("workshop.bead.newProject")}
+              variant="secondary"
+              size="small"
+              onClick={onNewProject}
+            />
+          </span>
         </div>
       }
       workflowControls={
@@ -740,6 +710,39 @@ export function BeadEditorStep({
         <div className="bead-editor-auxiliary">
           <header className="bead-editor-auxiliary__header">
             <strong>{t("workshop.bead.workspace.auxiliary")}</strong>
+            <div className="bead-editor-auxiliary__review">
+              <span className="review-summary">
+                {interpolate(t("workshop.bead.reviewSummary"), {
+                  pending: unresolvedIssueIndices.length,
+                  total: project.confidenceIssues.length,
+                })}
+              </span>
+              <button
+                type="button"
+                className="segmented-control"
+                aria-label={t("workshop.bead.previousIssue")}
+                title={t("workshop.bead.previousIssue")}
+                disabled={unresolvedIssueIndices.length === 0}
+                onClick={() => selectIssue(-1)}
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                className="segmented-control"
+                aria-label={t("workshop.bead.nextIssue")}
+                title={t("workshop.bead.nextIssue")}
+                disabled={unresolvedIssueIndices.length === 0}
+                onClick={() => selectIssue(1)}
+              >
+                ›
+              </button>
+              <Checkbox
+                label={t("workshop.bead.showGrid")}
+                checked={showGrid}
+                onChange={setShowGrid}
+              />
+            </div>
             <button
               type="button"
               className="segmented-control"

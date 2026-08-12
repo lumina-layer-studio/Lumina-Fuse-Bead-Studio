@@ -909,7 +909,7 @@ select:focus-visible,
   right: 16px;
   left: 16px;
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto minmax(240px, 1fr);
+  grid-template-columns: minmax(360px, 1fr) auto minmax(240px, 1fr);
   align-items: center;
   gap: 12px;
   pointer-events: none;
@@ -968,12 +968,18 @@ select:focus-visible,
 }
 
 .bead-editor-project-control {
-  position: relative;
   display: flex;
   min-height: 48px;
   align-items: center;
+  gap: 10px;
+  padding: 5px 6px 5px 48px;
+}
+
+.bead-editor-project-control__identity {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
   gap: 7px;
-  padding: 6px 8px 6px 48px;
 }
 
 .bead-editor-project-control__title {
@@ -990,38 +996,15 @@ select:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
-.bead-editor-project-menu summary {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border-radius: 9px;
-  cursor: pointer;
-  font-size: 1.25rem;
-  list-style: none;
-}
-
-.bead-editor-project-menu summary::-webkit-details-marker {
-  display: none;
-}
-
-.bead-editor-project-menu[open] summary {
-  background: var(--bead-surface-muted);
-}
-
-.bead-editor-project-menu__content {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
+.bead-editor-project-actions {
   display: flex;
-  width: min(300px, calc(100cqi - 32px));
-  flex-direction: column;
-  gap: 10px;
-  border: 1px solid var(--bead-border);
-  border-radius: 14px;
-  padding: 12px;
-  background: var(--bead-surface-strong);
-  box-shadow: var(--bead-shadow);
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.bead-editor-project-actions .button {
+  min-height: 38px;
+  padding-inline: 10px;
 }
 
 .bead-editor-output-summary {
@@ -1243,7 +1226,7 @@ select:focus-visible,
 .bead-editor-workspace__auxiliary {
   right: 16px;
   bottom: 12px;
-  width: 320px;
+  width: 340px;
   height: 154px;
   overflow: hidden;
   padding: 8px;
@@ -1278,9 +1261,37 @@ select:focus-visible,
   grid-column: 1 / -1;
 }
 
+.bead-editor-auxiliary__header > strong {
+  white-space: nowrap;
+}
+
 .bead-editor-auxiliary__header .segmented-control {
   min-height: 28px;
   padding: 3px 8px;
+}
+
+.bead-editor-auxiliary__review {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.bead-editor-auxiliary__review .review-summary {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.bead-editor-auxiliary__review .segmented-control {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+}
+
+.bead-editor-auxiliary__review .checkbox {
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .bead-editor-auxiliary__tabs {
@@ -1348,7 +1359,7 @@ select:focus-visible,
     grid-template-columns: auto 1fr auto;
   }
 
-  .bead-editor-project-control__title,
+  .bead-editor-project-control__identity,
   .bead-editor-output-summary {
     display: none;
   }
@@ -1373,6 +1384,19 @@ select:focus-visible,
     justify-self: center;
     max-width: 100%;
     overflow-x: auto;
+  }
+
+  .bead-editor-project-control__title,
+  .bead-editor-project-control__size {
+    display: none;
+  }
+
+  .bead-editor-project-actions .button {
+    min-width: 42px;
+    min-height: 42px;
+    overflow: hidden;
+    padding-inline: 7px;
+    font-size: 0.7rem;
   }
 
   .bead-editor-workspace__output .button {
@@ -1427,6 +1451,8 @@ select:focus-visible,
 
   .bead-editor-workspace__auxiliary[data-expanded="false"]
     .bead-editor-auxiliary__header strong,
+  .bead-editor-workspace__auxiliary[data-expanded="false"]
+    .bead-editor-auxiliary__review,
   .bead-editor-workspace__auxiliary[data-expanded="false"]
     .bead-editor-auxiliary__canvas {
     display: none;
