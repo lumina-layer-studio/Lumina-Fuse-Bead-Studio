@@ -26,6 +26,7 @@ import {
 
 import { createBeadThreePreviewController } from "../src/app/beadThreePreviewController";
 import { BEAD_PLACEMENT_ANIMATION_MS } from "../src/app/beadFastPreviewLayer";
+import { buildFastBeadPreviewModel } from "../src/domain/fastPreviewModel";
 import { buildPhysicalPreviewLayout } from "../src/domain/physicalPreviewModel";
 import type { PhysicalPreviewModel } from "../src/domain/physicalPreviewModel";
 import { createBeadProject } from "../src/domain/project";
@@ -1118,6 +1119,44 @@ describe("beadThreePreviewController resource lifecycle", () => {
     expect(readInstanceMatrix(fastMesh, 0).elements[10]).toBe(0);
     expect(readInstanceScale(fastMesh, 1).x).toBeGreaterThan(0);
     expect(readInstanceScale(fastMesh, 2).x).toBeGreaterThan(0);
+    controller.dispose();
+  });
+
+  it("keeps a 100% no-hole replacement seated while exact fusion catches up", () => {
+    const sceneAdd = vi.spyOn(Scene.prototype, "add");
+    const controller = createBeadThreePreviewController(
+      document.createElement("canvas"),
+      vi.fn(),
+    );
+    const initial = makeProject([RED_CELL], {
+      compression: 100,
+      irregularity: 0,
+    });
+    const replaced = makeProject([BLUE_CELL], {
+      compression: 100,
+      irregularity: 0,
+    });
+
+    previewProject(controller, initial, 1);
+    flushFrame(0);
+    controller.update(makeGridModel(1, 1), 1);
+    flushFrame(1);
+    flushFrame(2);
+
+    previewProject(controller, replaced, 2);
+    flushFrame(10);
+    const fastMesh = findNamedObject<InstancedMesh>(
+      sceneAdd,
+      "bead-preview-fast-beads",
+    );
+    const expectedScale = buildFastBeadPreviewModel(replaced).slots[0]!;
+
+    for (const elapsedMs of [0, 40, 80, 219, 270, 320, 370]) {
+      if (elapsedMs > 0) flushFrame(10 + elapsedMs);
+      const scale = readInstanceScale(fastMesh, 0);
+      expect(scale.x).toBeGreaterThanOrEqual(expectedScale.scaleX - 1e-6);
+      expect(scale.z).toBeGreaterThanOrEqual(expectedScale.scaleZ - 1e-6);
+    }
     controller.dispose();
   });
 

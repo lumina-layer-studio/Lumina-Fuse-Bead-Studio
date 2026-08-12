@@ -425,6 +425,39 @@ describe("persistent fast bead preview layer", () => {
     expect(layer.hasActiveAnimations()).toBe(false);
   });
 
+  it("keeps a seated full footprint throughout a 100% no-hole replacement", () => {
+    const scene = new Scene();
+    const layer = createBeadFastPreviewLayer(scene, false);
+    const red = makeModel([RED], {
+      compression: 100,
+      irregularity: 0,
+    });
+    const blue = makeModel([BLUE], {
+      compression: 100,
+      irregularity: 0,
+    });
+    const startedAt = 100;
+    const slot = blue.slots[0]!;
+
+    layer.update(red, 1, 0);
+    layer.update(blue, 2, startedAt);
+
+    const mesh = fastMesh(scene);
+    expect(blue.holeRadiusMm).toBe(0);
+    for (const elapsedMs of [0, 40, 80, 219, 270, 320, 370]) {
+      if (elapsedMs > 0) layer.advance(startedAt + elapsedMs);
+      const current = readTransform(mesh, 0);
+      expect(current.scale.x).toBeGreaterThanOrEqual(slot.scaleX - 1e-6);
+      expect(current.scale.z).toBeGreaterThanOrEqual(slot.scaleZ - 1e-6);
+      expect(
+        current.position.y - blue.heightMm * current.scale.y / 2,
+      ).toBeCloseTo(0, 6);
+      expect(
+        current.position.y + blue.heightMm * current.scale.y / 2,
+      ).toBeGreaterThan(blue.board.pegHeightMm);
+    }
+  });
+
   it("lifts an erased bead from its current animated pose", () => {
     const scene = new Scene();
     const layer = createBeadFastPreviewLayer(scene, false);

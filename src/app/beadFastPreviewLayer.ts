@@ -84,6 +84,7 @@ interface PlacementAnimation {
   slot: FastBeadPreviewSlot;
   heightMm: number;
   dropHeightMm: number;
+  keepSeatedFootprint: boolean;
 }
 
 interface ExitAnimation {
@@ -201,7 +202,20 @@ function physicalProfileKey(model: FastBeadPreviewModel): string {
   ].join(":");
 }
 
-function placementPose(elapsedMs: number, animation: PlacementAnimation) {
+function placementPose(
+  elapsedMs: number,
+  animation: PlacementAnimation,
+): PlacementPose {
+  if (animation.keepSeatedFootprint) {
+    const progress = clamp01(elapsedMs / BEAD_PLACEMENT_ANIMATION_MS);
+    const pulse = Math.sin(Math.PI * progress);
+    return {
+      radialScale: 1 + 0.025 * pulse,
+      verticalScale: 1 + 0.035 * pulse,
+      liftMm: 0,
+    } satisfies PlacementPose;
+  }
+
   if (elapsedMs < APPEARANCE_END_MS) {
     const progress = easeOutCubic(elapsedMs / APPEARANCE_END_MS);
     const scale = INITIAL_SCALE + (1 - INITIAL_SCALE) * progress;
@@ -396,7 +410,7 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
             outgoingMatrixDirty = true;
             outgoingColorDirty = true;
             this.writeColor(mesh, slot.cellIndex, slot.color);
-            this.startPlacement(mesh, slot, model, now);
+            this.startPlacement(mesh, slot, model, now, true);
           }
           colorDirty = true;
           matrixDirty = true;
@@ -629,6 +643,7 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
     slot: FastBeadPreviewSlot,
     model: FastBeadPreviewModel,
     now: number,
+    replacing = false,
   ): void {
     const animation = {
       startedAt: now,
@@ -641,6 +656,7 @@ class ThreeBeadFastPreviewLayer implements BeadFastPreviewLayer {
         model.heightMm * 1.8,
         model.outerRadiusMm * 0.7,
       ),
+      keepSeatedFootprint: replacing && model.holeRadiusMm === 0,
     } satisfies PlacementAnimation;
     this.animations.set(slot.cellIndex, animation);
     this.writeAnimatedMatrix(mesh, slot.cellIndex, animation, 0);
