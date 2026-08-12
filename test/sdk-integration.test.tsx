@@ -73,7 +73,7 @@ describe("Workshop SDK entry", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "编辑拼豆矩阵" }),
+      await screen.findByRole("heading", { name: "编辑豆子" }),
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(harness.methods()).toEqual(

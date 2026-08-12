@@ -382,7 +382,7 @@ async function startRestoredEditor(
   });
   const client = await harness.connect();
   mountWorkshop(client, engine, imageCodecFor(raster));
-  await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+  await screen.findByRole("heading", { name: "编辑豆子" });
   return { client, harness };
 }
 
@@ -408,7 +408,7 @@ async function returnToEditor() {
   fireEvent.click(
     screen.getByRole("button", { name: "返回编辑器" }),
   );
-  await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+  await screen.findByRole("heading", { name: "编辑豆子" });
 }
 
 async function recognizeAndOpenEditor() {
@@ -417,7 +417,7 @@ async function recognizeAndOpenEditor() {
   });
   await waitFor(() => expect(recognizeButton).toBeEnabled());
   fireEvent.click(recognizeButton);
-  await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+  await screen.findByRole("heading", { name: "编辑豆子" });
 }
 
 describe("BeadWorkshopModule", () => {
@@ -472,10 +472,10 @@ describe("BeadWorkshopModule", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "编辑拼豆矩阵" }),
+      await screen.findByRole("heading", { name: "编辑豆子" }),
     ).toBeInTheDocument();
     const editorShell = screen
-      .getByRole("heading", { name: "编辑拼豆矩阵" })
+      .getByRole("heading", { name: "编辑豆子" })
       .closest("main");
     expect(editorShell).toHaveClass("module-shell--editor");
     expect(editorShell?.querySelector(".workbench-stack")).toHaveClass(
@@ -516,7 +516,7 @@ describe("BeadWorkshopModule", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "编辑拼豆矩阵" }),
+      await screen.findByRole("heading", { name: "编辑豆子" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "原图" })).toBeDisabled();
     await waitFor(() => {
@@ -553,10 +553,10 @@ describe("BeadWorkshopModule", () => {
     const { client, harness } = await startRestoredEditor(project, engine);
 
     fireEvent.click(
-      screen.getByRole("button", { name: "交给 Lumina 转换" }),
+      screen.getByRole("button", { name: "生成打印文件" }),
     );
     await screen.findByRole("dialog", {
-      name: "确认交给 Lumina 转换？",
+      name: "确认生成打印文件？",
     });
 
     expect(engine.renderRequests).toHaveLength(1);
@@ -1015,7 +1015,7 @@ describe("BeadWorkshopModule", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "编辑拼豆矩阵",
+        name: "编辑豆子",
       }),
     ).toBeInTheDocument();
     expect(
@@ -1254,7 +1254,7 @@ describe("BeadWorkshopModule", () => {
       expect(returnButton).toBeEnabled();
       fireEvent.click(returnButton);
       await screen.findByRole("heading", {
-        name: "编辑拼豆矩阵",
+        name: "编辑豆子",
       });
       await returnToCalibration();
       expect(
@@ -1376,7 +1376,7 @@ describe("BeadWorkshopModule", () => {
     });
     expect(
       await screen.findByRole("heading", {
-        name: "编辑拼豆矩阵",
+        name: "编辑豆子",
       }),
     ).toBeInTheDocument();
     client.close();
@@ -1444,7 +1444,7 @@ describe("BeadWorkshopModule", () => {
     mountWorkshop(client, new FakeEngine(), imageCodecFor(raster));
 
     await screen.findByRole("heading", {
-      name: "编辑拼豆矩阵",
+      name: "编辑豆子",
     });
     expect(
       await screen.findByText(
@@ -1458,7 +1458,7 @@ describe("BeadWorkshopModule", () => {
     });
 
     fireEvent.change(
-      screen.getByRole("spinbutton", { name: "单豆节距" }),
+      screen.getByRole("spinbutton", { name: "豆子间距" }),
       { target: { value: "3.2" } },
     );
 
@@ -1491,12 +1491,12 @@ describe("BeadWorkshopModule", () => {
     mountWorkshop(client, new FakeEngine(), imageCodecFor(raster));
 
     await screen.findByRole("heading", {
-      name: "编辑拼豆矩阵",
+      name: "编辑豆子",
     });
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
 
     fireEvent.change(
-      screen.getByRole("spinbutton", { name: "单豆节距" }),
+      screen.getByRole("spinbutton", { name: "豆子间距" }),
       { target: { value: "3.2" } },
     );
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
@@ -1538,10 +1538,10 @@ describe("BeadWorkshopModule", () => {
     );
 
     await screen.findByRole("heading", {
-      name: "编辑拼豆矩阵",
+      name: "编辑豆子",
     });
     fireEvent.change(
-      screen.getByRole("spinbutton", { name: "单豆节距" }),
+      screen.getByRole("spinbutton", { name: "豆子间距" }),
       { target: { value: "3.2" } },
     );
     expect(save).not.toHaveBeenCalled();
@@ -1771,7 +1771,7 @@ describe("BeadWorkshopModule", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "编辑拼豆矩阵" }),
+      await screen.findByRole("heading", { name: "编辑豆子" }),
     ).toBeInTheDocument();
     expect(screen.getByText("已恢复本机项目")).toBeInTheDocument();
     expect(
@@ -1821,7 +1821,7 @@ describe("BeadWorkshopModule", () => {
     );
 
     await screen.findByText(
-      "Lumina 当前没有可用的 LUT 或耗材档案，仍可使用图纸原色编辑。",
+      "尚未读取到耗材颜色，仍可使用原图颜色编辑。",
     );
     expect(
       harness.methods().filter(
@@ -1829,10 +1829,10 @@ describe("BeadWorkshopModule", () => {
       ),
     ).toHaveLength(1);
     fireEvent.click(
-      screen.getByRole("button", { name: "重新读取打印色库" }),
+      screen.getByRole("button", { name: "重新读取耗材颜色" }),
     );
     expect(
-      await screen.findByText("当前色库：Aliz RYBW"),
+      await screen.findByText("当前耗材：Aliz RYBW"),
     ).toBeInTheDocument();
     expect(
       harness.methods().filter(
@@ -1880,7 +1880,7 @@ describe("BeadWorkshopModule", () => {
     );
 
     const reload = await screen.findByRole("button", {
-      name: "重新读取打印色库",
+      name: "重新读取耗材颜色",
     });
     await waitFor(() => expect(reload).toBeEnabled());
     fireEvent.click(reload);
@@ -1888,7 +1888,7 @@ describe("BeadWorkshopModule", () => {
     expect(read).toHaveBeenCalledTimes(2);
     manualRead.resolve(RETRIED_LIBRARY);
     expect(
-      await screen.findByText("当前色库：Aliz RYBW"),
+      await screen.findByText("当前耗材：Aliz RYBW"),
     ).toBeInTheDocument();
 
     client.close();
@@ -1956,23 +1956,23 @@ describe("BeadWorkshopModule", () => {
       />,
     );
 
-    await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+    await screen.findByRole("heading", { name: "编辑豆子" });
     const printPreview = screen.getByRole("button", {
-      name: "当前打印色库",
+      name: "耗材颜色",
     });
     expect(printPreview).toBeDisabled();
     expect(
-      screen.getByText("当前色库：官方 PLA"),
+      screen.getByText("当前耗材：官方 PLA"),
     ).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "生成打印色映射" }),
+      screen.getByRole("button", { name: "匹配耗材颜色" }),
     );
     await waitFor(() => expect(printPreview).toBeEnabled());
     expect(printPreview).toHaveAttribute("aria-pressed", "true");
 
     const firstColor = screen.getByRole("combobox", {
-      name: "作品颜色 1",
+      name: "图案颜色 1",
     });
     expect(firstColor.querySelectorAll("option")).toHaveLength(3);
     fireEvent.change(firstColor, {
@@ -2027,25 +2027,25 @@ describe("BeadWorkshopModule", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "识别拼豆矩阵" }),
     );
-    await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+    await screen.findByRole("heading", { name: "编辑豆子" });
 
     fireEvent.click(
-      screen.getByRole("button", { name: "交给 Lumina 转换" }),
+      screen.getByRole("button", { name: "生成打印文件" }),
     );
     expect(
       await screen.findByRole("dialog", {
-        name: "确认交给 Lumina 转换？",
+        name: "确认生成打印文件？",
       }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "2 × 2 格 · 5.2 × 5.2 × 2.35 mm · 压合 50% · 不规则 0%",
+        "2 × 2 格 · 5.2 × 5.2 × 2.35 mm · 熨烫 50% · 自然形变 0%",
       ),
     ).toBeInTheDocument();
     expect(harness.payloads("handoff.image")).toHaveLength(0);
 
     fireEvent.click(
-      screen.getByRole("button", { name: "继续交给 Lumina" }),
+      screen.getByRole("button", { name: "继续生成" }),
     );
     expect(
       await screen.findByRole("dialog", {
@@ -2098,16 +2098,16 @@ describe("BeadWorkshopModule", () => {
     const client = await harness.connect();
     mountWorkshop(client, new FakeEngine(), imageCodecFor(sourceRaster(30, 20)));
 
-    await screen.findByRole("heading", { name: "编辑拼豆矩阵" });
+    await screen.findByRole("heading", { name: "编辑豆子" });
     const handoffTrigger = screen.getByRole("button", {
-      name: "交给 Lumina 转换",
+      name: "生成打印文件",
     });
     handoffTrigger.focus();
     expect(handoffTrigger).toHaveFocus();
 
     fireEvent.click(handoffTrigger);
     const summaryDialog = await screen.findByRole("dialog", {
-      name: "确认交给 Lumina 转换？",
+      name: "确认生成打印文件？",
     });
     await waitFor(() =>
       expect(summaryDialog).toContainElement(document.activeElement as HTMLElement),
@@ -2115,7 +2115,7 @@ describe("BeadWorkshopModule", () => {
 
     const summaryCancel = screen.getByRole("button", { name: "返回编辑" });
     const summaryConfirm = screen.getByRole("button", {
-      name: "继续交给 Lumina",
+      name: "继续生成",
     });
     summaryCancel.focus();
     fireEvent.keyDown(summaryCancel, { key: "Tab", shiftKey: true });
@@ -2127,7 +2127,7 @@ describe("BeadWorkshopModule", () => {
     await waitFor(() =>
       expect(
         screen.queryByRole("dialog", {
-          name: "确认交给 Lumina 转换？",
+          name: "确认生成打印文件？",
         }),
       ).not.toBeInTheDocument(),
     );
@@ -2135,10 +2135,10 @@ describe("BeadWorkshopModule", () => {
 
     fireEvent.click(handoffTrigger);
     await screen.findByRole("dialog", {
-      name: "确认交给 Lumina 转换？",
+      name: "确认生成打印文件？",
     });
     fireEvent.click(
-      screen.getByRole("button", { name: "继续交给 Lumina" }),
+      screen.getByRole("button", { name: "继续生成" }),
     );
 
     const replacementDialog = await screen.findByRole("dialog", {

@@ -125,7 +125,7 @@ describe("BeadEditorStep", () => {
       />,
     );
 
-    expect(screen.getByText("2.6 × 2.6 mm")).toBeInTheDocument();
+    expect(screen.getByText("成品尺寸：2.6 × 2.6 mm")).toBeInTheDocument();
     expect(screen.getByText("4 × 4")).toBeInTheDocument();
   });
 
@@ -152,25 +152,25 @@ describe("BeadEditorStep", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "编辑拼豆矩阵" }),
+      screen.getByRole("heading", { name: "编辑豆子" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "当前打印色库" }),
+      screen.getByRole("button", { name: "耗材颜色" }),
     ).toBeDisabled();
     expect(
       screen.getByText(
-        "Lumina 当前没有可用的 LUT 或耗材档案，仍可使用图纸原色编辑。",
+        "尚未读取到耗材颜色，仍可使用原图颜色编辑。",
       ),
     ).toBeInTheDocument();
     const tools = [
-      ["画笔", "paint"],
-      ["橡皮", "erase"],
-      ["区域擦除", "eraseFill"],
-      ["吸管", "eyedropper"],
-      ["填充", "fill"],
+      ["放豆", "paint"],
+      ["擦除", "erase"],
+      ["清除连片", "eraseFill"],
+      ["取色", "eyedropper"],
+      ["填充区域", "fill"],
     ] as const;
     const toolbar = screen.getByRole("toolbar", {
-      name: "编辑工具",
+      name: "放豆工具",
     });
     for (const [name, tool] of tools) {
       fireEvent.click(within(toolbar).getByRole("button", { name }));
@@ -205,26 +205,26 @@ describe("BeadEditorStep", () => {
     expect(
       screen.getByRole("img", { name: "拼豆图纸原图" }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "识别矩阵" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑豆子" }));
     expect(
-      screen.getByRole("img", { name: "可编辑拼豆矩阵" }),
+      screen.getByRole("img", { name: "可编辑拼豆图案" }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "压合预览" }));
+    fireEvent.click(screen.getByRole("button", { name: "熨烫效果" }));
     const fusionPreview = screen.getByRole("img", {
-      name: "拼豆压合预览",
+      name: "拼豆熨烫效果",
     });
     expect(fusionPreview).toBeInTheDocument();
     expect(fusionPreview.tagName.toLowerCase()).toBe("svg");
     expect(
       fusionPreview.querySelectorAll("[data-bead-fusion-path]"),
     ).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "3D 预览" }));
+    fireEvent.click(screen.getByRole("button", { name: "3D 成品" }));
     expect(
-      screen.getByRole("img", { name: "可旋转的拼豆 3D 预览" }),
+      screen.getByRole("img", { name: "可旋转的拼豆 3D 成品" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "默认顶视与 2D 方向一致。编辑模式用左键或单指使用当前工具；视角模式可直接拖动查看，也可用右键或 Alt+左键旋转、中键平移、滚轮缩放。3D 与压合预览使用同一套融合规则，并显示豆板。",
+        "默认从正上方查看，方向和 2D 一致。选择“编辑豆子”后，左键或单指直接使用当前工具；选择“调整视角”后，拖动旋转，滚轮或双指缩放。桌面端也可用右键旋转、中键平移。",
       ),
     ).toBeInTheDocument();
     expect(threePreviewCapture.project?.palette).toEqual([
@@ -272,7 +272,7 @@ describe("BeadEditorStep", () => {
     }
 
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "3D 预览" }));
+    fireEvent.click(screen.getByRole("button", { name: "3D 成品" }));
 
     const initialPick = threePreviewCapture.onPickCell;
     expect(initialPick).toEqual(expect.any(Function));
@@ -283,7 +283,7 @@ describe("BeadEditorStep", () => {
     ]);
 
     fireEvent.click(screen.getByRole("button", { name: "颜色 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "填充" }));
+    fireEvent.click(screen.getByRole("button", { name: "填充区域" }));
     expect(screen.getByTestId("active-palette")).toHaveTextContent("1");
     expect(threePreviewCapture.onPickCell).not.toBe(initialPick);
     expect(threePreviewCapture.allowDrag).toBe(false);
@@ -306,7 +306,7 @@ describe("BeadEditorStep", () => {
     expect(screen.getByTestId("selected-cell")).toHaveTextContent("0");
     expect(threePreviewCapture.selectedCellIndex).toBe(0);
     expect(
-      screen.getByRole("img", { name: "可旋转的拼豆 3D 预览" }),
+      screen.getByRole("img", { name: "可旋转的拼豆 3D 成品" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("img", { name: "选中格局部放大" }),
@@ -317,7 +317,7 @@ describe("BeadEditorStep", () => {
       "empty",
     );
     expect(
-      screen.getByRole("img", { name: "可旋转的拼豆 3D 预览" }),
+      screen.getByRole("img", { name: "可旋转的拼豆 3D 成品" }),
     ).toBeInTheDocument();
   });
 
@@ -344,7 +344,7 @@ describe("BeadEditorStep", () => {
           onNewProject={vi.fn()}
         />,
       );
-      fireEvent.click(screen.getByRole("button", { name: "3D 预览" }));
+      fireEvent.click(screen.getByRole("button", { name: "3D 成品" }));
 
       expect(threePreviewCapture.allowDrag).toBe(expectedAllowDrag);
       expect(threePreviewCapture.selectedCellIndex).toBe(3);
@@ -381,35 +381,35 @@ describe("BeadEditorStep", () => {
 
     const workspace = screen.getByTestId("bead-editor-workspace");
     expect(
-      screen.getByRole("heading", { name: "编辑" }),
+      screen.getByRole("heading", { name: "放豆与修正" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "参数与输出" }),
+      screen.getByRole("heading", { name: "成品效果" }),
     ).toBeInTheDocument();
     const editorHeadings = screen.getAllByRole("heading", {
-      name: "编辑拼豆矩阵",
+      name: "编辑豆子",
     });
     expect(editorHeadings).toHaveLength(1);
     expect(editorHeadings[0].tagName).toBe("H1");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "收起编辑控件" }),
+      screen.getByRole("button", { name: "收起放豆工具" }),
     );
     expect(workspace).toHaveAttribute("data-left-collapsed", "true");
     const collapsedEditorHeadings = screen.getAllByRole("heading", {
-      name: "编辑拼豆矩阵",
+      name: "编辑豆子",
     });
     expect(collapsedEditorHeadings).toHaveLength(1);
     expect(collapsedEditorHeadings[0].tagName).toBe("H1");
     expect(
-      screen.getByRole("img", { name: "可编辑拼豆矩阵" }),
+      screen.getByRole("img", { name: "可编辑拼豆图案" }),
     ).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "展开编辑控件" }),
+      screen.getByRole("button", { name: "展开放豆工具" }),
     );
     expect(
-      screen.getByRole("button", { name: "画笔" }),
+      screen.getByRole("button", { name: "放豆" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(dispatch).not.toHaveBeenCalled();
   });
@@ -489,13 +489,13 @@ describe("BeadEditorStep", () => {
       screen.getByRole("status", { name: "当前缩放：250%" }),
     ).toHaveTextContent("250%");
 
-    fireEvent.click(screen.getByRole("button", { name: "识别矩阵" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑豆子" }));
     expect(
       screen.getByRole("status", { name: "当前缩放：100%" }),
     ).toHaveTextContent("100%");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "压合预览" }),
+      screen.getByRole("button", { name: "熨烫效果" }),
     );
     expect(screen.getByTestId("bead-canvas-viewport")).toBe(
       matrixViewport,
@@ -504,7 +504,7 @@ describe("BeadEditorStep", () => {
       screen.getByTestId("bead-canvas-viewport-content"),
     ).toHaveStyle({ width: "24px", height: "24px" });
 
-    fireEvent.click(screen.getByRole("button", { name: "3D 预览" }));
+    fireEvent.click(screen.getByRole("button", { name: "3D 成品" }));
     expect(
       screen.queryByTestId("bead-canvas-viewport"),
     ).not.toBeInTheDocument();
@@ -522,30 +522,30 @@ describe("BeadEditorStep", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "压合预览" }),
+      screen.getByRole("button", { name: "熨烫效果" }),
     );
     const pressureButton = screen.getByRole("button", {
-      name: "压合预览",
+      name: "熨烫效果",
     });
     expect(pressureButton).toHaveAttribute("aria-pressed", "true");
     expect(
-      screen.getByRole("img", { name: "拼豆压合预览" }),
+      screen.getByRole("img", { name: "拼豆熨烫效果" }),
     ).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "收起参数控件" }),
+      screen.getByRole("button", { name: "收起成品设置" }),
     );
     expect(screen.getByTestId("bead-editor-workspace")).toHaveAttribute(
       "data-right-collapsed",
       "true",
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "展开参数控件" }),
+      screen.getByRole("button", { name: "展开成品设置" }),
     );
 
     expect(pressureButton).toHaveAttribute("aria-pressed", "true");
     expect(
-      screen.getByRole("img", { name: "拼豆压合预览" }),
+      screen.getByRole("img", { name: "拼豆熨烫效果" }),
     ).toBeInTheDocument();
   });
 
@@ -584,9 +584,9 @@ describe("BeadEditorStep", () => {
       />,
     );
 
-    expect(screen.getByText("当前色库：当前测试色库")).toBeInTheDocument();
+    expect(screen.getByText("当前耗材：当前测试色库")).toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole("button", { name: "生成打印色映射" }),
+      screen.getByRole("button", { name: "匹配耗材颜色" }),
     );
     expect(onRefreshPrintMapping).toHaveBeenCalledTimes(1);
 
@@ -610,9 +610,9 @@ describe("BeadEditorStep", () => {
       />,
     );
 
-    expect(screen.getByText("当前色库：当前测试色库")).toBeInTheDocument();
+    expect(screen.getByText("当前耗材：当前测试色库")).toBeInTheDocument();
     fireEvent.change(
-      screen.getByRole("combobox", { name: "作品颜色 2" }),
+      screen.getByRole("combobox", { name: "图案颜色 2" }),
       { target: { value: "print-red" } },
     );
     expect(onSetPrintMappingEntry).toHaveBeenCalledWith(1, "print-red");
@@ -644,10 +644,10 @@ describe("BeadEditorStep", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "3D 预览" }));
+    fireEvent.click(screen.getByRole("button", { name: "3D 成品" }));
     expect(
       screen.getByText(
-        "当前图案有 4160 颗豆，超过 4096 颗的交互式 3D 安全上限；已显示同规则的 2D 压合预览。",
+        "当前图案有 4160 颗豆，超过 4096 颗的交互式 3D 安全上限；已显示同样效果的 2D 熨烫预览。",
       ),
     ).toBeInTheDocument();
     expect(
@@ -733,9 +733,9 @@ describe("BeadEditorStep", () => {
     const cellsBefore = screen.getByTestId("cells").textContent;
     const pitchBefore = screen.getByTestId("pitch").textContent;
     for (const name of [
-      "0 · 紧密有孔",
-      "50 · 标准熔合",
-      "100 · 平熔无孔",
+      "0 · 有孔",
+      "50 · 标准",
+      "100 · 无孔",
     ]) {
       fireEvent.click(screen.getByRole("button", { name }));
     }
@@ -748,14 +748,14 @@ describe("BeadEditorStep", () => {
     );
 
     fireEvent.change(
-      screen.getByRole("slider", { name: "压合程度" }),
+      screen.getByRole("slider", { name: "熨烫程度" }),
       { target: { value: "84" } },
     );
     expect(screen.getByTestId("compression")).toHaveTextContent("84");
-    expect(screen.getByText("5.2 × 5.2 mm")).toBeInTheDocument();
+    expect(screen.getByText("成品尺寸：5.2 × 5.2 mm")).toBeInTheDocument();
 
     fireEvent.change(
-      screen.getByRole("slider", { name: "不规则挤压" }),
+      screen.getByRole("slider", { name: "自然形变" }),
       { target: { value: "67" } },
     );
     expect(screen.getByTestId("irregularity")).toHaveTextContent("67");
@@ -785,7 +785,7 @@ describe("BeadEditorStep", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: "区域擦除" }),
+      screen.getByRole("button", { name: "清除连片" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByText(
@@ -829,7 +829,7 @@ describe("BeadEditorStep", () => {
     });
     expect(magnifierCanvas).toHaveClass("bead-canvas--matrix");
     const canvas = screen.getByRole("img", {
-      name: "可编辑拼豆矩阵",
+      name: "可编辑拼豆图案",
     });
     expect(canvas).toHaveClass("bead-canvas--matrix");
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
@@ -880,7 +880,7 @@ describe("BeadEditorStep", () => {
       />,
     );
     const canvas = screen.getByRole("img", {
-      name: "可编辑拼豆矩阵",
+      name: "可编辑拼豆图案",
     });
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
       x: 0,
@@ -938,7 +938,7 @@ describe("BeadEditorStep", () => {
     );
 
     const button = screen.getByRole("button", {
-      name: "交给 Lumina 转换",
+      name: "生成打印文件",
     });
     expect(button).toBeEnabled();
     fireEvent.click(button);
@@ -965,7 +965,7 @@ describe("BeadEditorStep", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: "交给 Lumina 转换",
+        name: "生成打印文件",
       }),
     ).toBeDisabled();
   });
@@ -1010,15 +1010,15 @@ describe("BeadEditorStep", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: "当前打印色库" }),
+      screen.getByRole("button", { name: "耗材颜色" }),
     ).toBeDisabled();
     expect(
       screen.getByText(
-        "Lumina 的当前色库已经变化；旧映射不会被静默替换。",
+        "Lumina 的耗材颜色已经变化；旧的匹配结果不会被静默替换。",
       ),
     ).toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole("button", { name: "按当前色库重新映射" }),
+      screen.getByRole("button", { name: "按当前耗材重新匹配" }),
     );
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
