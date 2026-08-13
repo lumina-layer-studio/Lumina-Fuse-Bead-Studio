@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "lumina.bead-pattern",
-  "version": "1.0.0",
+  "version": "1.0.8",
   "name": {
     "zh-CN": "拼豆工作台",
     "en-US": "Fuse Bead Studio"
@@ -36,7 +36,7 @@
     },
     {
       "name": "handoff.image",
-      "reason": "将确认后的源色 PNG 交给 Lumina 转换"
+      "reason": "将确认后的源色 SVG 与兼容 PNG 交给 Lumina 转换"
     }
   ]
 }

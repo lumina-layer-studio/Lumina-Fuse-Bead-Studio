@@ -1,0 +1,18 @@
+{
+  "preview52Ms": 1000,
+  "full104Ms": 10000,
+  "mainThreadMaxSliceMs": 200,
+  "peakTransferredBytes": 100000000,
+  "releasedWorkerCount": 1,
+  "releasedBlobUrlCount": 1,
+  "fastPreview3532Ms": 8,
+  "fastPreview16384Ms": 25,
+  "svgPreview911Ms": 250,
+  "svgPreview3532Ms": 500,
+  "fusionSurface911Ms": 750,
+  "fusionSurface3532Ms": 1500,
+  "threeGeometry3532Ms": 1500,
+  "threeGeometry3532Bytes": 80000000,
+  "physicalPreview3532Ms": 50,
+  "physicalPreview16384Ms": 100
+}

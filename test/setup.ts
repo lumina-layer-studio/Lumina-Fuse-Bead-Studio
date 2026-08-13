@@ -1,4 +1,22 @@
 import "@testing-library/jest-dom/vitest";
+import { cleanup } from "@testing-library/react";
+import { afterEach } from "vitest";
+
+afterEach(() => {
+  if (typeof document !== "undefined") {
+    cleanup();
+  }
+});
+
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent !== "function"
+) {
+  Object.defineProperty(window, "PointerEvent", {
+    configurable: true,
+    value: window.MouseEvent,
+  });
+}
 
 if (typeof URL.createObjectURL !== "function") {
   URL.createObjectURL = () => "blob:test";

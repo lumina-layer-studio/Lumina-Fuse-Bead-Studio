@@ -5,6 +5,7 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 export default defineConfig({
   plugins: [react(), viteSingleFile()],
   base: "./",
+  publicDir: false,
   build: {
     outDir: "dist/ui",
     emptyOutDir: true,
