@@ -2,6 +2,7 @@ import {
   applyWorkshopUiState,
   connectWorkshop,
   type WorkshopClient,
+  type WorkshopUiState,
 } from "@lumina/workshop-sdk";
 import { useEffect, useState } from "react";
 
@@ -18,6 +19,33 @@ import {
 } from "./BeadWorkshopModule";
 
 type ConnectFunction = () => Promise<WorkshopClient>;
+
+function sameWorkshopUiState(
+  left: WorkshopUiState | null,
+  right: WorkshopUiState,
+): boolean {
+  if (
+    left === null ||
+    left.locale !== right.locale ||
+    left.theme !== right.theme
+  ) {
+    return false;
+  }
+  const leftTokens = Object.entries(left.tokens).sort(
+    ([leftName], [rightName]) => leftName.localeCompare(rightName),
+  );
+  const rightTokens = Object.entries(right.tokens).sort(
+    ([leftName], [rightName]) => leftName.localeCompare(rightName),
+  );
+  return (
+    leftTokens.length === rightTokens.length &&
+    leftTokens.every(
+      ([name, value], index) =>
+        rightTokens[index]?.[0] === name &&
+        rightTokens[index]?.[1] === value,
+    )
+  );
+}
 
 interface ModuleEntryProps {
   connect?: ConnectFunction;
@@ -47,21 +75,40 @@ export function ModuleEntry({
   useEffect(() => {
     let active = true;
     let connectedClient: WorkshopClient | null = null;
+    let unsubscribeUiState: (() => void) | null = null;
+    const cleanupConnection = () => {
+      unsubscribeUiState?.();
+      unsubscribeUiState = null;
+      connectedClient?.close();
+      connectedClient = null;
+    };
     const start = async () => {
       try {
         const client = await connect();
         connectedClient = client;
-        const ui = await client.ui.getState();
         if (!active) {
-          client.close();
+          cleanupConnection();
           return;
         }
-        applyWorkshopUiState(ui);
-        setConnection({
-          client,
-          locale: normalizeLocale(ui.locale),
-        });
+        let appliedUiState: WorkshopUiState | null = null;
+        const applyUiState = (ui: WorkshopUiState) => {
+          if (!active || sameWorkshopUiState(appliedUiState, ui)) return;
+          appliedUiState = ui;
+          applyWorkshopUiState(ui);
+          setConnection({
+            client,
+            locale: normalizeLocale(ui.locale),
+          });
+        };
+        unsubscribeUiState = client.ui.subscribeState(applyUiState);
+        const ui = await client.ui.getState();
+        if (!active) {
+          cleanupConnection();
+          return;
+        }
+        applyUiState(ui);
       } catch {
+        cleanupConnection();
         if (active) {
           setError(
             "无法连接 Lumina 创意工坊宿主。请关闭此模块后重试。 / Unable to connect to the Lumina Workshop host.",
@@ -72,7 +119,7 @@ export function ModuleEntry({
     void start();
     return () => {
       active = false;
-      connectedClient?.close();
+      cleanupConnection();
     };
   }, [connect]);
 

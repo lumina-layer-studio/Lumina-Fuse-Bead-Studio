@@ -16,6 +16,7 @@ describe("module package contract", () => {
 
     expect(manifest.version).toBe(packageJson.version);
     expect(manifest.version).toBe(BEAD_MODULE_VERSION);
+    expect(BEAD_MODULE_VERSION).toBe("1.0.8");
 
     expect(manifest).toEqual({
       manifestVersion: 1,

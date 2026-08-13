@@ -16,6 +16,7 @@ interface HarnessOptions {
   colorLibrary?: WorkshopColorLibrary | null;
   colorLibraries?: Array<WorkshopColorLibrary | null>;
   uiState?: WorkshopUiState;
+  uiStateResponse?: Promise<WorkshopUiState>;
   handoffStatuses?: Array<"needs-confirmation" | "completed">;
 }
 
@@ -25,6 +26,7 @@ interface MessageListener {
 
 export interface SdkHarness {
   connect(): Promise<WorkshopClient>;
+  pushUiState(state: WorkshopUiState): Promise<void>;
   methods(): WorkshopRpcMethod[];
   payloads(method: WorkshopRpcMethod): unknown[];
   savedProjects(): WorkshopProjectRecord<unknown>[];
@@ -57,7 +59,7 @@ export function createSdkHarness(
         let result: unknown;
         switch (request.method) {
           case "ui.getState":
-            result =
+            result = options.uiStateResponse ??
               options.uiState ??
               ({
                 locale: "zh-CN",
@@ -119,13 +121,15 @@ export function createSdkHarness(
             result = undefined;
             break;
         }
-        channel.port1.postMessage({
-          protocol: "lumina-workshop-rpc",
-          version: 1,
-          kind: "response",
-          requestId: request.requestId,
-          ok: true,
-          result,
+        void Promise.resolve(result).then((resolvedResult) => {
+          channel.port1.postMessage({
+            protocol: "lumina-workshop-rpc",
+            version: 1,
+            kind: "response",
+            requestId: request.requestId,
+            ok: true,
+            result: resolvedResult,
+          });
         });
       });
       channel.port1.start();
@@ -168,6 +172,18 @@ export function createSdkHarness(
         .map((request) => request.payload),
     savedProjects: () => structuredClone(saved),
     indexOf: (method) => methods.indexOf(method),
+    pushUiState: async (state) => {
+      for (const port of ports) {
+        port.postMessage({
+          protocol: "lumina-workshop-rpc",
+          version: 1,
+          kind: "event",
+          event: "ui.stateChanged",
+          payload: state,
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    },
     close: () => {
       for (const port of ports) port.close();
     },
